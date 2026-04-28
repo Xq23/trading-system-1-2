@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>永续合约概览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b1220;
+        color: #dbe6ff;
+      }
+      .container {
+        height: 100%;
+        box-sizing: border-box;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+      }
+      .symbol-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+      }
+      .symbol-bar select {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 6px 10px;
+      }
+      .pair-info {
+        color: #9eb0d8;
+        font-size: 13px;
+      }
+      .grid {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .card {
+        border: 1px solid #2d3b59;
+        border-radius: 10px;
+        background: #0d1527;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        cursor: pointer;
+      }
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-bottom: 1px solid #1f2f4e;
+        font-size: 13px;
+      }
+      .card-title {
+        font-weight: 600;
+      }
+      .card-meta {
+        color: #5f739e;
+        font-size: 12px;
+      }
+      .chart {
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      .error {
+        color: #ff9090;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="symbol-bar">
+          <label for="symbol-select">币种：</label>
+          <select id="symbol-select">
+            <option value="BTC" selected>BTC</option>
+            <option value="ETH">ETH</option>
+          </select>
+          <div id="pair-info" class="pair-info">BTC/USDT 永续合约（币安） | 最新 --</div>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card" data-interval="1d">
+          <div class="card-head"><span class="card-title">年维度</span><span class="card-meta" data-meta="1d"></span></div>
+          <div class="chart" id="chart-year"></div>
+        </div>
+        <div class="card" data-interval="12h">
+          <div class="card-head"><span class="card-title">季度维度</span><span class="card-meta" data-meta="12h"></span></div>
+          <div class="chart" id="chart-quarter"></div>
+        </div>
+        <div class="card" data-interval="4h">
+          <div class="card-head"><span class="card-title">月维度</span><span class="card-meta" data-meta="4h"></span></div>
+          <div class="chart" id="chart-month"></div>
+        </div>
+        <div class="card" data-interval="30m">
+          <div class="card-head"><span class="card-title">周维度</span><span class="card-meta" data-meta="30m"></span></div>
+          <div class="chart" id="chart-week"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script>
+      const chartDefs = [
+        { id: "chart-year", interval: "1d" },
+        { id: "chart-quarter", interval: "12h" },
+        { id: "chart-month", interval: "4h" },
+        { id: "chart-week", interval: "30m" },
+      ];
+      const chartInstances = new Map();
+      const symbolSelectEl = document.getElementById("symbol-select");
+      const pairInfoEl = document.getElementById("pair-info");
+      const query = new URLSearchParams(window.location.search);
+      const symbolFromQuery = query.get("symbol");
+      const symbolConfig = {
+        BTC: { exchangeSymbol: "BTCUSDT", pairName: "BTC/USDT 永续合约（币安）" },
+        ETH: { exchangeSymbol: "ETHUSDT", pairName: "ETH/USDT 永续合约（币安）" },
+      };
+      if (symbolConfig[symbolFromQuery]) symbolSelectEl.value = symbolFromQuery;
+      const REQUEST_TIMEOUT_MS = 8000;
+      const MAX_RETRIES = 2;
+      const RETRY_BASE_MS = 350;
+      const POLL_INTERVAL_MS = 15000;
+      let isLoading = false;
+      let pollTimer = null;
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function fetchJsonWithTimeout(url, timeoutMs) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return await response.json();
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      function normalizeKlinesResponse(raw) {
+        if (!Array.isArray(raw) || raw.length === 0) throw new Error("空数据");
+        return raw;
+      }
+
+      async function requestKlines(symbol, interval, limit) {
+        const queryStr =
+          "symbol=" +
+          encodeURIComponent(symbol) +
+          "&interval=" +
+          encodeURIComponent(interval) +
+          "&limit=" +
+          encodeURIComponent(limit);
+        const candidates = ["/api/klines?" + queryStr, "https://fapi.binance.com/fapi/v1/klines?" + queryStr];
+        let lastError = null;
+        for (const url of candidates) {
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+            try {
+              const raw = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
+              return normalizeKlinesResponse(raw);
+            } catch (error) {
+              lastError = error;
+              if (attempt < MAX_RETRIES) await sleep(RETRY_BASE_MS * 2 ** attempt);
+            }
+          }
+        }
+        throw lastError || new Error("行情请求失败");
+      }
+
+      function stopPolling() {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      function startPolling() {
+        stopPolling();
+        pollTimer = setInterval(() => {
+          if (!document.hidden) loadAll();
+        }, POLL_INTERVAL_MS);
+      }
+
+      function formatTime(ms) {
+        const d = new Date(ms);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+      function computeVpStats(window) {
+        let sumVol = 0;
+        let weightedPrice = 0;
+        for (const k of window) {
+          const high = Number(k[2]);
+          const low = Number(k[3]);
+          const close = Number(k[4]);
+          const volume = Number(k[5]);
+          const typicalPrice = (high + low + close) / 3;
+          sumVol += volume;
+          weightedPrice += typicalPrice * volume;
+        }
+        const fallbackClose = Number(window[window.length - 1][4]);
+        const poc = sumVol > 0 ? weightedPrice / sumVol : fallbackClose;
+        let varianceWeighted = 0;
+        for (const k of window) {
+          const high = Number(k[2]);
+          const low = Number(k[3]);
+          const close = Number(k[4]);
+          const volume = Number(k[5]);
+          const typicalPrice = (high + low + close) / 3;
+          const diff = typicalPrice - poc;
+          varianceWeighted += diff * diff * volume;
+        }
+        const sigma = sumVol > 0 ? Math.sqrt(varianceWeighted / sumVol) : 0;
+        return { poc, vah: poc + sigma, val: poc - sigma };
+      }
+      function getWeekKey(ms) {
+        const d = new Date(ms);
+        const day = d.getUTCDay();
+        const deltaToMonday = (day + 6) % 7;
+        d.setUTCHours(0, 0, 0, 0);
+        d.setUTCDate(d.getUTCDate() - deltaToMonday);
+        return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
+      }
+      function getMonthKeyUTC(ms) {
+        const d = new Date(ms);
+        return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0);
+      }
+      function getQuarterKeyUTC(ms) {
+        const d = new Date(ms);
+        const q0 = Math.floor(d.getUTCMonth() / 3) * 3;
+        return Date.UTC(d.getUTCFullYear(), q0, 1, 0, 0, 0, 0);
+      }
+      function getYearKeyUTC(ms) {
+        const d = new Date(ms);
+        return Date.UTC(d.getUTCFullYear(), 0, 1, 0, 0, 0, 0);
+      }
+      function getPeriodKey(ms, interval) {
+        if (interval === "30m") return getWeekKey(ms);
+        if (interval === "4h") return getMonthKeyUTC(ms);
+        if (interval === "12h") return getQuarterKeyUTC(ms);
+        if (interval === "1d") return getYearKeyUTC(ms);
+        return 0;
+      }
+      function calcVpBands(raw, interval) {
+        const result = {
+          poc: new Array(raw.length).fill(null),
+          vah: new Array(raw.length).fill(null),
+          val: new Array(raw.length).fill(null),
+          currentPeriodStartIdx: 0,
+        };
+        const periods = new Map();
+        for (let i = 0; i < raw.length; i += 1) {
+          const key = getPeriodKey(Number(raw[i][0]), interval);
+          if (!periods.has(key)) periods.set(key, []);
+          periods.get(key).push(i);
+        }
+        const keys = Array.from(periods.keys()).sort((a, b) => a - b);
+        if (keys.length === 0) return result;
+        const currentKey = keys[keys.length - 1];
+        const currentIdxs = periods.get(currentKey) || [];
+        result.currentPeriodStartIdx = currentIdxs.length > 0 ? currentIdxs[0] : 0;
+        for (const key of keys) {
+          const idxs = periods.get(key);
+          if (!idxs || idxs.length === 0) continue;
+          if (key !== currentKey) {
+            const stats = computeVpStats(idxs.map((idx) => raw[idx]));
+            for (const idx of idxs) {
+              result.poc[idx] = stats.poc;
+              result.vah[idx] = stats.vah;
+              result.val[idx] = stats.val;
+            }
+            continue;
+          }
+          let smoothPoc = null;
+          let smoothVah = null;
+          let smoothVal = null;
+          const alpha = 0.35;
+          for (let j = 0; j < idxs.length; j += 1) {
+            const idx = idxs[j];
+            const stats = computeVpStats(raw.slice(idxs[0], idx + 1));
+            if (smoothPoc == null) {
+              smoothPoc = stats.poc;
+              smoothVah = stats.vah;
+              smoothVal = stats.val;
+            } else {
+              smoothPoc = alpha * stats.poc + (1 - alpha) * smoothPoc;
+              smoothVah = alpha * stats.vah + (1 - alpha) * smoothVah;
+              smoothVal = alpha * stats.val + (1 - alpha) * smoothVal;
+            }
+            result.poc[idx] = smoothPoc;
+            result.vah[idx] = smoothVah;
+            result.val[idx] = smoothVal;
+          }
+        }
+        return result;
+      }
+      function computePrevPeriodExtendVp(raw, interval, vpBands) {
+        const n = raw.length;
+        const nil = () => new Array(n).fill(null);
+        const periods = new Map();
+        for (let i = 0; i < n; i += 1) {
+          const key = getPeriodKey(Number(raw[i][0]), interval);
+          if (!periods.has(key)) periods.set(key, []);
+          periods.get(key).push(i);
+        }
+        const keys = Array.from(periods.keys()).sort((a, b) => a - b);
+        if (keys.length < 2) return { prevExtendVah: nil(), prevExtendPoc: nil(), prevExtendVal: nil() };
+        const prevIdxs = periods.get(keys[keys.length - 2]);
+        const lastPrevIdx = prevIdxs[prevIdxs.length - 1];
+        const pvah = vpBands.vah[lastPrevIdx];
+        const ppoc = vpBands.poc[lastPrevIdx];
+        const pval = vpBands.val[lastPrevIdx];
+        const cs = vpBands.currentPeriodStartIdx;
+        const prevExtendVah = nil();
+        const prevExtendPoc = nil();
+        const prevExtendVal = nil();
+        for (let i = cs; i < n; i += 1) {
+          prevExtendVah[i] = pvah;
+          prevExtendPoc[i] = ppoc;
+          prevExtendVal[i] = pval;
+        }
+        return { prevExtendVah, prevExtendPoc, prevExtendVal };
+      }
+      function buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal) {
+        const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
+        const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
+        const historyBandDelta = vpBands.vah.map((v, i) =>
+          i < currentPeriodStart && v != null && vpBands.val[i] != null ? v - vpBands.val[i] : null
+        );
+        const currentVal = vpBands.val.map((v, i) => (i >= currentPeriodStart ? v : null));
+        const currentBandDelta = vpBands.vah.map((v, i) =>
+          i >= currentPeriodStart && v != null && vpBands.val[i] != null ? v - vpBands.val[i] : null
+        );
+        return {
+          animation: false,
+          backgroundColor: "#0d1527",
+          tooltip: { show: false },
+          grid: { left: 8, right: 54, top: 10, bottom: 26, containLabel: false },
+          xAxis: {
+            type: "category",
+            data: timestamps,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: "#2d3b59" } },
+            axisTick: { show: false },
+            axisLabel: { show: false },
+            splitLine: { show: false },
+          },
+          yAxis: {
+            scale: true,
+            position: "right",
+            axisLine: { lineStyle: { color: "#2d3b59" } },
+            axisTick: { show: false },
+            axisLabel: { color: "#9eb0d8", formatter: (val) => (Number.isFinite(Number(val)) ? String(Math.round(Number(val))) : "") },
+            splitLine: { lineStyle: { color: "#1c2946" } },
+          },
+          series: [
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-history", data: historyVal },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.04)" }, stack: "vp-band-history", data: historyBandDelta },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-current", data: currentVal },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.10)" }, stack: "vp-band-current", data: currentBandDelta },
+            { name: "上周期VAH延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVah, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.34)" } },
+            { name: "上周期POC延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendPoc, lineStyle: { width: 0.9, type: "dashed", color: "rgba(76,114,255,0.34)" } },
+            { name: "上周期VAL延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVal, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.26)" } },
+            { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
+            { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
+            { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
+            { type: "candlestick", silent: true, data: candles, itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" } },
+          ],
+        };
+      }
+      function updatePairInfo(latestPrice) {
+        const cfg = symbolConfig[symbolSelectEl.value];
+        const latestText = Number.isFinite(Number(latestPrice)) ? Number(latestPrice).toFixed(2) : "--";
+        pairInfoEl.textContent = `${cfg.pairName} | 最新 ${latestText}`;
+      }
+      async function loadOne(def) {
+        const metaEl = document.querySelector(`[data-meta="${def.interval}"]`);
+        const cfg = symbolConfig[symbolSelectEl.value];
+        try {
+          const raw = await requestKlines(cfg.exchangeSymbol, def.interval, 300);
+          const timestamps = raw.map((item) => formatTime(Number(item[0])));
+          const candles = raw.map((item) => [Number(item[1]), Number(item[4]), Number(item[3]), Number(item[2])]);
+          const vpBands = calcVpBands(raw, def.interval);
+          const { prevExtendVah, prevExtendPoc, prevExtendVal } = computePrevPeriodExtendVp(raw, def.interval, vpBands);
+          const chart = chartInstances.get(def.id);
+          chart.setOption(buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal), true);
+          metaEl.textContent = "";
+          metaEl.classList.remove("error");
+          if (def.interval === "30m") updatePairInfo(Number(raw[raw.length - 1][4]));
+        } catch (_) {
+          metaEl.textContent = "加载失败";
+          metaEl.classList.add("error");
+          if (def.interval === "30m") updatePairInfo(NaN);
+        }
+      }
+      async function loadAll() {
+        if (isLoading) return;
+        isLoading = true;
+        try {
+          await Promise.all(chartDefs.map((def) => loadOne(def)));
+        } finally {
+          isLoading = false;
+        }
+      }
+      for (const def of chartDefs) {
+        chartInstances.set(def.id, echarts.init(document.getElementById(def.id), null, { renderer: "canvas" }));
+      }
+      document.querySelectorAll(".card").forEach((card) => {
+        card.addEventListener("click", () => {
+          const interval = card.getAttribute("data-interval");
+          window.location.href = `index.html?symbol=${encodeURIComponent(symbolSelectEl.value)}&interval=${encodeURIComponent(interval)}`;
+        });
+      });
+      symbolSelectEl.addEventListener("change", () => {
+        updatePairInfo(NaN);
+        loadAll();
+      });
+      window.addEventListener("resize", () => {
+        for (const chart of chartInstances.values()) chart.resize();
+      });
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          stopPolling();
+          return;
+        }
+        loadAll();
+        startPolling();
+      });
+      updatePairInfo(NaN);
+      loadAll();
+      startPolling();
+    </script>
+  </body>
+</html>

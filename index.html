@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>永续合约详情</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b1220;
+        color: #dbe6ff;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        max-width: 1200px;
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 16px;
+        box-sizing: border-box;
+      }
+      .toolbar {
+        flex-shrink: 0;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .toolbar select,
+      .toolbar button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      .toolbar button:hover {
+        background: #1d2a45;
+      }
+      #overview {
+        margin-left: auto;
+      }
+      .chart-shell {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+      }
+      #chart {
+        flex: 1 1 auto;
+        min-height: 460px;
+        border: 1px solid #2d3b59;
+        border-radius: 12px;
+      }
+      .status {
+        flex-shrink: 0;
+        padding-top: 12px;
+        font-size: 13px;
+        color: #9eb0d8;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .status-text {
+        min-width: 0;
+      }
+      .error {
+        color: #ff9090;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="toolbar">
+        <strong id="symbol-title">币安 BTC/USDT 永续 K 线</strong>
+        <label>
+          币种：
+          <select id="symbol">
+            <option value="BTC" selected>BTC</option>
+            <option value="ETH">ETH</option>
+          </select>
+        </label>
+        <label>
+          周期：
+          <select id="interval">
+            <option value="30m" selected>30min</option>
+            <option value="4h">4h</option>
+            <option value="12h">12h</option>
+            <option value="1d">1d</option>
+          </select>
+        </label>
+        <button id="overview">概览页</button>
+      </div>
+      <div class="chart-shell">
+        <div id="chart"></div>
+      </div>
+      <div class="status">
+        <div id="status-text" class="status-text">准备加载数据...</div>
+        <button id="refresh">手动刷新</button>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script>
+      const chartEl = document.getElementById("chart");
+      const statusTextEl = document.getElementById("status-text");
+      const symbolTitleEl = document.getElementById("symbol-title");
+      const symbolEl = document.getElementById("symbol");
+      const intervalEl = document.getElementById("interval");
+      const overviewBtn = document.getElementById("overview");
+      const refreshBtn = document.getElementById("refresh");
+      const chart = echarts.init(chartEl, null, { renderer: "canvas" });
+
+      const query = new URLSearchParams(window.location.search);
+      const symbolConfig = {
+        BTC: { exchangeSymbol: "BTCUSDT", title: "币安 BTC/USDT 永续 K 线" },
+        ETH: { exchangeSymbol: "ETHUSDT", title: "币安 ETH/USDT 永续 K 线" },
+      };
+      const symbolFromQuery = query.get("symbol");
+      const intervalFromQuery = query.get("interval");
+      if (symbolConfig[symbolFromQuery]) symbolEl.value = symbolFromQuery;
+      if (new Set(["30m", "4h", "12h", "1d"]).has(intervalFromQuery)) intervalEl.value = intervalFromQuery;
+      function getActiveSymbolConfig() {
+        return symbolConfig[symbolEl.value] || symbolConfig.BTC;
+      }
+      function refreshTitle() {
+        symbolTitleEl.textContent = getActiveSymbolConfig().title;
+      }
+      refreshTitle();
+
+      const zoomState = { start: 65, end: 100, userChanged: false };
+      const interactionState = { mouseInChart: false };
+      const REQUEST_TIMEOUT_MS = 8000;
+      const MAX_RETRIES = 2;
+      const RETRY_BASE_MS = 350;
+      const POLL_INTERVAL_MS = 10000;
+      let isLoading = false;
+      let pollTimer = null;
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function fetchJsonWithTimeout(url, timeoutMs) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+          }
+          return await response.json();
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      function normalizeKlinesResponse(raw) {
+        if (!Array.isArray(raw) || raw.length === 0) throw new Error("接口返回空数据");
+        return raw;
+      }
+
+      async function requestKlines(symbol, interval, limit) {
+        const queryStr =
+          "symbol=" +
+          encodeURIComponent(symbol) +
+          "&interval=" +
+          encodeURIComponent(interval) +
+          "&limit=" +
+          encodeURIComponent(limit);
+        const candidates = [
+          { url: "/api/klines?" + queryStr, source: "proxy" },
+          { url: "https://fapi.binance.com/fapi/v1/klines?" + queryStr, source: "binance" },
+        ];
+        let lastError = null;
+        for (const target of candidates) {
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+            try {
+              const raw = await fetchJsonWithTimeout(target.url, REQUEST_TIMEOUT_MS);
+              return { raw: normalizeKlinesResponse(raw), source: target.source };
+            } catch (error) {
+              lastError = error;
+              if (attempt < MAX_RETRIES) {
+                await sleep(RETRY_BASE_MS * 2 ** attempt);
+              }
+            }
+          }
+        }
+        throw lastError || new Error("行情请求失败");
+      }
+
+      function stopPolling() {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      function startPolling() {
+        stopPolling();
+        pollTimer = setInterval(() => {
+          if (!document.hidden) loadKlines();
+        }, POLL_INTERVAL_MS);
+      }
+
+      function computeVpStats(window) {
+        let sumVol = 0;
+        let weightedPrice = 0;
+        for (const k of window) {
+          const high = Number(k[2]);
+          const low = Number(k[3]);
+          const close = Number(k[4]);
+          const volume = Number(k[5]);
+          const typicalPrice = (high + low + close) / 3;
+          sumVol += volume;
+          weightedPrice += typicalPrice * volume;
+        }
+        const fallbackClose = Number(window[window.length - 1][4]);
+        const poc = sumVol > 0 ? weightedPrice / sumVol : fallbackClose;
+        let varianceWeighted = 0;
+        for (const k of window) {
+          const high = Number(k[2]);
+          const low = Number(k[3]);
+          const close = Number(k[4]);
+          const volume = Number(k[5]);
+          const typicalPrice = (high + low + close) / 3;
+          const diff = typicalPrice - poc;
+          varianceWeighted += diff * diff * volume;
+        }
+        const sigma = sumVol > 0 ? Math.sqrt(varianceWeighted / sumVol) : 0;
+        return { poc, vah: poc + sigma, val: poc - sigma };
+      }
+
+      function getWeekKey(ms) {
+        const d = new Date(ms);
+        const day = d.getUTCDay();
+        const deltaToMonday = (day + 6) % 7;
+        d.setUTCHours(0, 0, 0, 0);
+        d.setUTCDate(d.getUTCDate() - deltaToMonday);
+        return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
+      }
+      function getMonthKeyUTC(ms) {
+        const d = new Date(ms);
+        return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0);
+      }
+      function getQuarterKeyUTC(ms) {
+        const d = new Date(ms);
+        const q0 = Math.floor(d.getUTCMonth() / 3) * 3;
+        return Date.UTC(d.getUTCFullYear(), q0, 1, 0, 0, 0, 0);
+      }
+      function getYearKeyUTC(ms) {
+        const d = new Date(ms);
+        return Date.UTC(d.getUTCFullYear(), 0, 1, 0, 0, 0, 0);
+      }
+      function getPeriodKey(ms, interval) {
+        if (interval === "30m") return getWeekKey(ms);
+        if (interval === "4h") return getMonthKeyUTC(ms);
+        if (interval === "12h") return getQuarterKeyUTC(ms);
+        if (interval === "1d") return getYearKeyUTC(ms);
+        return 0;
+      }
+      function calcVpBands(raw, interval) {
+        const result = {
+          poc: new Array(raw.length).fill(null),
+          vah: new Array(raw.length).fill(null),
+          val: new Array(raw.length).fill(null),
+          currentPeriodStartIdx: 0,
+        };
+        const periods = new Map();
+        for (let i = 0; i < raw.length; i += 1) {
+          const key = getPeriodKey(Number(raw[i][0]), interval);
+          if (!periods.has(key)) periods.set(key, []);
+          periods.get(key).push(i);
+        }
+        const keys = Array.from(periods.keys()).sort((a, b) => a - b);
+        if (keys.length === 0) return result;
+        const currentKey = keys[keys.length - 1];
+        const currentIdxs = periods.get(currentKey) || [];
+        result.currentPeriodStartIdx = currentIdxs.length > 0 ? currentIdxs[0] : 0;
+        for (const key of keys) {
+          const idxs = periods.get(key);
+          if (!idxs || idxs.length === 0) continue;
+          if (key !== currentKey) {
+            const stats = computeVpStats(idxs.map((idx) => raw[idx]));
+            for (const idx of idxs) {
+              result.poc[idx] = stats.poc;
+              result.vah[idx] = stats.vah;
+              result.val[idx] = stats.val;
+            }
+            continue;
+          }
+          let smoothPoc = null;
+          let smoothVah = null;
+          let smoothVal = null;
+          const alpha = 0.35;
+          for (let j = 0; j < idxs.length; j += 1) {
+            const idx = idxs[j];
+            const stats = computeVpStats(raw.slice(idxs[0], idx + 1));
+            if (smoothPoc == null) {
+              smoothPoc = stats.poc;
+              smoothVah = stats.vah;
+              smoothVal = stats.val;
+            } else {
+              smoothPoc = alpha * stats.poc + (1 - alpha) * smoothPoc;
+              smoothVah = alpha * stats.vah + (1 - alpha) * smoothVah;
+              smoothVal = alpha * stats.val + (1 - alpha) * smoothVal;
+            }
+            result.poc[idx] = smoothPoc;
+            result.vah[idx] = smoothVah;
+            result.val[idx] = smoothVal;
+          }
+        }
+        return result;
+      }
+      function computePrevPeriodExtendVp(raw, interval, vpBands) {
+        const n = raw.length;
+        const nil = () => new Array(n).fill(null);
+        const periods = new Map();
+        for (let i = 0; i < n; i += 1) {
+          const key = getPeriodKey(Number(raw[i][0]), interval);
+          if (!periods.has(key)) periods.set(key, []);
+          periods.get(key).push(i);
+        }
+        const keys = Array.from(periods.keys()).sort((a, b) => a - b);
+        if (keys.length < 2) {
+          return { prevExtendVah: nil(), prevExtendPoc: nil(), prevExtendVal: nil() };
+        }
+        const prevIdxs = periods.get(keys[keys.length - 2]);
+        const lastPrevIdx = prevIdxs[prevIdxs.length - 1];
+        const pvah = vpBands.vah[lastPrevIdx];
+        const ppoc = vpBands.poc[lastPrevIdx];
+        const pval = vpBands.val[lastPrevIdx];
+        const start = vpBands.currentPeriodStartIdx;
+        const prevExtendVah = nil();
+        const prevExtendPoc = nil();
+        const prevExtendVal = nil();
+        for (let i = start; i < n; i += 1) {
+          prevExtendVah[i] = pvah;
+          prevExtendPoc[i] = ppoc;
+          prevExtendVal[i] = pval;
+        }
+        return { prevExtendVah, prevExtendPoc, prevExtendVal };
+      }
+      function calcVolumeSignals(raw, lookback = 34, multiplier = 3.0) {
+        const isSpike = new Array(raw.length).fill(false);
+        const npoc = new Array(raw.length).fill(null);
+        const npocPoints = [];
+        let lastNpoc = null;
+        for (let i = 0; i < raw.length; i += 1) {
+          const start = Math.max(0, i - lookback + 1);
+          let sum = 0;
+          for (let j = start; j <= i; j += 1) sum += Number(raw[j][5]);
+          const avgVol = sum / (i - start + 1);
+          const curVol = Number(raw[i][5]);
+          const spike = curVol > avgVol * multiplier;
+          if (spike) {
+            const high = Number(raw[i][2]);
+            const low = Number(raw[i][3]);
+            const close = Number(raw[i][4]);
+            lastNpoc = (high + low + close) / 3;
+            isSpike[i] = true;
+            npocPoints.push([i, lastNpoc]);
+          }
+          npoc[i] = lastNpoc;
+        }
+        return { isSpike, npoc, npocPoints };
+      }
+
+      function buildOption(
+        timestamps,
+        candles,
+        volumeValues,
+        volumeColors,
+        vpBands,
+        lastClose,
+        interval,
+        npocSeries,
+        npocPoints,
+        spikeFlags,
+        zoomRange,
+        ohlcRows,
+        prevExtendVah,
+        prevExtendPoc,
+        prevExtendVal
+      ) {
+        const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
+        const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
+        const historyBandDelta = vpBands.vah.map((v, i) =>
+          i < currentPeriodStart && v != null && vpBands.val[i] != null ? v - vpBands.val[i] : null
+        );
+        const currentVal = vpBands.val.map((v, i) => (i >= currentPeriodStart ? v : null));
+        const currentBandDelta = vpBands.vah.map((v, i) =>
+          i >= currentPeriodStart && v != null && vpBands.val[i] != null ? v - vpBands.val[i] : null
+        );
+
+        return {
+          backgroundColor: "#0b1220",
+          animation: false,
+          tooltip: {
+            show: true,
+            trigger: "axis",
+            confine: true,
+            borderColor: "#2d3b59",
+            borderWidth: 1,
+            backgroundColor: "rgba(8,14,28,0.96)",
+            extraCssText:
+              "box-shadow: 0 10px 24px rgba(0,0,0,0.35); border-radius: 10px; backdrop-filter: blur(2px);",
+            textStyle: { color: "#dbe6ff" },
+            formatter: (params) => {
+              if (!Array.isArray(params) || params.length === 0) return "";
+              const point = params[0];
+              const axisValue = point?.axisValue;
+              if (typeof axisValue === "string" && axisValue.startsWith("__pad_")) return "";
+              const dataIndex = point?.dataIndex ?? -1;
+              const row = dataIndex >= 0 ? ohlcRows[dataIndex] : null;
+              const open = row ? Number(row[0]) : NaN;
+              const close = row ? Number(row[1]) : NaN;
+              const low = row ? Number(row[2]) : NaN;
+              const high = row ? Number(row[3]) : NaN;
+              if (!Number.isFinite(open) || !Number.isFinite(close) || !Number.isFinite(high) || !Number.isFinite(low)) {
+                return "";
+              }
+              const vah = vpBands.vah[dataIndex];
+              const poc = vpBands.poc[dataIndex];
+              const val = vpBands.val[dataIndex];
+              const vol = Number(volumeValues[dataIndex]);
+              const npoc = npocSeries[dataIndex];
+              const isSpikeBar = Boolean(spikeFlags[dataIndex]);
+              const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "--");
+              const npocLine =
+                isSpikeBar && Number.isFinite(Number(npoc))
+                  ? `<div style="display:grid;grid-template-columns:52px auto;column-gap:10px;align-items:center;"><span style="color:#f6c453;">NPOC</span><span style="color:#f6c453;font-weight:600;text-align:right;">${fmt(npoc)}</span></div>`
+                  : "";
+              const volLine = Number.isFinite(vol)
+                ? `<div style="display:grid;grid-template-columns:52px auto;column-gap:10px;align-items:center;"><span style="color:#9eb0d8;">VOL</span><span style="font-weight:600;text-align:right;">${fmt(vol)}</span></div>`
+                : "";
+              return `
+                <div style="min-width:180px;">
+                  <div style="font-size:12px;color:#9eb0d8;letter-spacing:0.2px;padding-bottom:8px;border-bottom:1px solid rgba(76,114,255,0.22);">${point?.axisValueLabel || ""}</div>
+                  <div style="padding:8px 0 6px 0;">
+                    <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#9eb0d8;">开盘</span><span style="font-weight:600;text-align:right;">${fmt(open)}</span></div>
+                    <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#9eb0d8;">收盘</span><span style="font-weight:600;text-align:right;">${fmt(close)}</span></div>
+                    <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#9eb0d8;">最高</span><span style="font-weight:600;text-align:right;">${fmt(high)}</span></div>
+                    <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#9eb0d8;">最低</span><span style="font-weight:600;text-align:right;">${fmt(low)}</span></div>
+                  </div>
+                  <div style="height:1px;background:rgba(139,165,255,0.20);margin:2px 0 8px 0;"></div>
+                  <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#8ba5ff;">VAH</span><span style="color:#8ba5ff;font-weight:600;text-align:right;">${fmt(vah)}</span></div>
+                  <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#4c72ff;">POC</span><span style="color:#4c72ff;font-weight:700;text-align:right;">${fmt(poc)}</span></div>
+                  <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#8ba5ff;">VAL</span><span style="color:#8ba5ff;font-weight:600;text-align:right;">${fmt(val)}</span></div>
+                  ${npocLine}
+                  ${volLine}
+                </div>
+              `;
+            },
+          },
+          grid: [
+            { left: 52, right: 92, top: 30, height: "70%" },
+            { left: 52, right: 92, top: "79%", height: "15%" },
+          ],
+          xAxis: [
+            {
+              type: "category",
+              data: timestamps,
+              boundaryGap: true,
+              axisLine: { lineStyle: { color: "#2d3b59" } },
+              axisLabel: {
+                color: "#9eb0d8",
+                showMaxLabel: true,
+                formatter: (val) =>
+                  typeof val === "string" && val.startsWith("__pad_") ? "" : val,
+              },
+              splitLine: { show: true, lineStyle: { color: "#1c2946" } },
+              min: "dataMin",
+              max: (value) => Math.min(value.max + 20, Math.max(0, timestamps.length - 1)),
+            },
+            {
+              type: "category",
+              gridIndex: 1,
+              data: timestamps,
+              boundaryGap: true,
+              axisLine: { lineStyle: { color: "#2d3b59" } },
+              axisLabel: { show: false },
+              axisTick: { show: false },
+              splitLine: { show: true, lineStyle: { color: "#1c2946" } },
+              min: "dataMin",
+              max: (value) => Math.min(value.max + 20, Math.max(0, timestamps.length - 1)),
+            },
+          ],
+          yAxis: [
+            {
+              scale: true,
+              position: "right",
+              min: (v) => v.min - Math.max(1, v.max - v.min) * 0.08,
+              max: (v) => v.max + Math.max(1, v.max - v.min) * 0.08,
+              axisLine: { show: true, lineStyle: { color: "#2d3b59" } },
+              axisTick: { show: true, lineStyle: { color: "#2d3b59" } },
+              axisLabel: {
+                show: true,
+                color: "#9eb0d8",
+                margin: 10,
+                formatter: (val) => (Number.isFinite(Number(val)) ? String(Math.round(Number(val))) : val),
+              },
+              splitLine: { lineStyle: { color: "#1c2946" } },
+            },
+            {
+              gridIndex: 1,
+              scale: true,
+              position: "right",
+              axisLine: { show: true, lineStyle: { color: "#2d3b59" } },
+              axisTick: { show: true, lineStyle: { color: "#2d3b59" } },
+              axisLabel: {
+                show: true,
+                color: "#9eb0d8",
+                margin: 10,
+                formatter: (val) => (Number.isFinite(Number(val)) ? String(Math.round(Number(val))) : val),
+              },
+              splitLine: { show: false },
+            },
+          ],
+          dataZoom: [
+            {
+              type: "inside",
+              xAxisIndex: [0, 1],
+              start: zoomRange.start,
+              end: zoomRange.end,
+              filterMode: "filter",
+              throttle: 16,
+              zoomOnMouseWheel: false,
+              moveOnMouseMove: true,
+              moveOnMouseWheel: true,
+            },
+            {
+              show: false,
+              xAxisIndex: [0, 1],
+              type: "slider",
+              bottom: 6,
+              filterMode: "filter",
+              start: zoomRange.start,
+              end: zoomRange.end,
+            },
+          ],
+          series: [
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-history", data: historyVal },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.04)" }, stack: "vp-band-history", data: historyBandDelta },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-current", data: currentVal },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.10)" }, stack: "vp-band-current", data: currentBandDelta },
+            { name: "上周期VAH延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVah, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.34)" } },
+            { name: "上周期POC延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendPoc, lineStyle: { width: 0.9, type: "dashed", color: "rgba(76,114,255,0.34)" } },
+            { name: "上周期VAL延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVal, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.26)" } },
+            { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
+            { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
+            { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
+            {
+              name: "K线",
+              type: "candlestick",
+              data: candles,
+              progressive: 1000,
+              progressiveThreshold: 1500,
+              itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" },
+              markPoint: {
+                symbol: "circle",
+                symbolSize: 1,
+                itemStyle: { color: "transparent", borderWidth: 0 },
+                label: {
+                  show: true,
+                  position: "right",
+                  distance: 6,
+                  color: "#dbe6ff",
+                  backgroundColor: "#1d2a45",
+                  borderColor: "#4c72ff",
+                  borderWidth: 1,
+                  padding: [3, 6],
+                  formatter: () => `最新 ${Math.round(lastClose)}`,
+                },
+                data: [{ coord: [timestamps[timestamps.length - 1], lastClose], value: lastClose }],
+              },
+            },
+            { name: "NPOC", type: "scatter", symbol: "circle", symbolSize: 8, data: npocPoints, itemStyle: { color: "#f6c453", borderColor: "#ffe49a", borderWidth: 1, shadowBlur: 8, shadowColor: "rgba(246,196,83,0.5)" }, z: 10 },
+            { name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: volumeValues, itemStyle: { color: (p) => volumeColors[p.dataIndex] ?? "#17c96499" } },
+          ],
+        };
+      }
+
+      async function loadKlines() {
+        if (isLoading) return;
+        isLoading = true;
+        const interval = intervalEl.value;
+        const activeSymbol = getActiveSymbolConfig();
+        try {
+          statusTextEl.classList.remove("error");
+          statusTextEl.textContent = "正在加载 " + interval + " 数据...";
+          const { raw, source } = await requestKlines(activeSymbol.exchangeSymbol, interval, 500);
+
+          const timestamps = raw.map((item) => {
+            const d = new Date(Number(item[0]));
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            const hh = String(d.getHours()).padStart(2, "0");
+            const mm = String(d.getMinutes()).padStart(2, "0");
+            return `${y}-${m}-${day} ${hh}:${mm}`;
+          });
+          const data = raw.map((item) => [Number(item[1]), Number(item[4]), Number(item[3]), Number(item[2])]);
+          const volumeSignal = calcVolumeSignals(raw, 34, 3.0);
+          const dataEnhanced = raw.map((item, idx) => {
+            const open = Number(item[1]);
+            const close = Number(item[4]);
+            const low = Number(item[3]);
+            const high = Number(item[2]);
+            const bullish = close >= open;
+            const spike = volumeSignal.isSpike[idx];
+            const upColor = spike ? "#31f2a6" : "#17c964";
+            const downColor = spike ? "#ff5d98" : "#f31260";
+            return {
+              value: [open, close, low, high],
+              itemStyle: {
+                color: bullish ? upColor : downColor,
+                color0: bullish ? upColor : downColor,
+                borderColor: bullish ? upColor : downColor,
+                borderColor0: bullish ? upColor : downColor,
+                borderWidth: spike ? 2 : 1,
+                shadowBlur: spike ? 8 : 0,
+                shadowColor: spike
+                  ? bullish
+                    ? "rgba(49,242,166,0.45)"
+                    : "rgba(255,93,152,0.45)"
+                  : "transparent",
+              },
+            };
+          });
+          const volumeValues = raw.map((item) => Number(item[5]));
+          const volumeColors = raw.map((item, idx) => {
+            const open = Number(item[1]);
+            const close = Number(item[4]);
+            const spike = volumeSignal.isSpike[idx];
+            const bullish = close >= open;
+            return spike ? (bullish ? "#31f2a6" : "#ff5d98") : bullish ? "#17c96499" : "#f3126099";
+          });
+          const vpBands = calcVpBands(raw, interval);
+          const last = Number(data[data.length - 1][1]);
+          if (!Number.isFinite(last)) throw new Error("最新价格异常");
+          const { prevExtendVah, prevExtendPoc, prevExtendVal } = computePrevPeriodExtendVp(raw, interval, vpBands);
+
+          const X_GAP = 20;
+          const padArr = (arr, fill) => arr.concat(Array(X_GAP).fill(fill));
+          const timestampsX = timestamps.concat(Array.from({ length: X_GAP }, (_, i) => `__pad_${i}`));
+          const dataEnhancedX = dataEnhanced.concat(Array(X_GAP).fill("-"));
+          const volumeValuesX = padArr(volumeValues, null);
+          const volumeColorsX = volumeColors.concat(Array(X_GAP).fill("transparent"));
+          const dataX = data.concat(Array(X_GAP).fill(null).map(() => [NaN, NaN, NaN, NaN]));
+          const vpBandsX = { ...vpBands, poc: padArr(vpBands.poc, null), vah: padArr(vpBands.vah, null), val: padArr(vpBands.val, null) };
+
+          chart.setOption(
+            buildOption(
+              timestampsX,
+              dataEnhancedX,
+              volumeValuesX,
+              volumeColorsX,
+              vpBandsX,
+              last,
+              interval,
+              padArr(volumeSignal.npoc, null),
+              volumeSignal.npocPoints,
+              padArr(volumeSignal.isSpike, false),
+              {
+                start: zoomState.userChanged && interactionState.mouseInChart ? zoomState.start : 65,
+                end: zoomState.userChanged && interactionState.mouseInChart ? zoomState.end : 100,
+              },
+              dataX,
+              padArr(prevExtendVah, null),
+              padArr(prevExtendPoc, null),
+              padArr(prevExtendVal, null)
+            ),
+            true
+          );
+          statusTextEl.textContent =
+            "最新收盘: " +
+            last.toFixed(2) +
+            " | 交易对: " +
+            activeSymbol.exchangeSymbol +
+            " | 周期: " +
+            interval +
+            " | 数据源: " +
+            source +
+            " | 更新时间: " +
+            new Date().toLocaleTimeString();
+        } catch (error) {
+          statusTextEl.classList.add("error");
+          statusTextEl.textContent = "加载失败: " + error.message;
+        } finally {
+          isLoading = false;
+        }
+      }
+
+      symbolEl.addEventListener("change", () => {
+        refreshTitle();
+        loadKlines();
+      });
+      intervalEl.addEventListener("change", loadKlines);
+      overviewBtn.addEventListener("click", () => {
+        window.location.href = `overview.html?symbol=${encodeURIComponent(symbolEl.value)}`;
+      });
+      refreshBtn.addEventListener("click", loadKlines);
+
+      chart.on("datazoom", () => {
+        const option = chart.getOption();
+        const dz = option?.dataZoom?.[0];
+        if (!dz) return;
+        if (Number.isFinite(dz.start) && Number.isFinite(dz.end)) {
+          zoomState.start = dz.start;
+          zoomState.end = dz.end;
+          zoomState.userChanged = true;
+        }
+      });
+      chartEl.addEventListener("mouseenter", () => {
+        interactionState.mouseInChart = true;
+      });
+      chartEl.addEventListener("mouseleave", () => {
+        interactionState.mouseInChart = false;
+        zoomState.userChanged = false;
+        zoomState.start = 65;
+        zoomState.end = 100;
+      });
+      window.addEventListener("resize", () => chart.resize());
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          stopPolling();
+          return;
+        }
+        loadKlines();
+        startPolling();
+      });
+
+      loadKlines();
+      startPolling();
+    </script>
+  </body>
+</html>

@@ -182,21 +182,29 @@
           { url: "/api/klines?" + queryStr, source: "proxy" },
           { url: "https://fapi.binance.com/fapi/v1/klines?" + queryStr, source: "binance" },
         ];
-        let lastError = null;
-        for (const target of candidates) {
-          for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-            try {
-              const raw = await fetchJsonWithTimeout(target.url, REQUEST_TIMEOUT_MS);
-              return { raw: normalizeKlinesResponse(raw), source: target.source };
-            } catch (error) {
-              lastError = error;
-              if (attempt < MAX_RETRIES) {
-                await sleep(RETRY_BASE_MS * 2 ** attempt);
+        const tasks = candidates.map((target) =>
+          (async () => {
+            let lastError = null;
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+              try {
+                const raw = await fetchJsonWithTimeout(target.url, REQUEST_TIMEOUT_MS);
+                return { raw: normalizeKlinesResponse(raw), source: target.source };
+              } catch (error) {
+                lastError = error;
+                if (attempt < MAX_RETRIES) {
+                  await sleep(RETRY_BASE_MS * 2 ** attempt);
+                }
               }
             }
-          }
-        }
-        throw lastError || new Error("行情请求失败");
+            throw lastError || new Error(target.source + " 请求失败");
+          })()
+        );
+        const settled = await Promise.allSettled(tasks);
+        const winner = settled.find((item) => item.status === "fulfilled");
+        if (winner && winner.status === "fulfilled") return winner.value;
+        const firstErr =
+          settled.find((item) => item.status === "rejected")?.reason || new Error("行情请求失败");
+        throw firstErr;
       }
 
       function stopPolling() {
@@ -441,9 +449,6 @@
                 isSpikeBar && Number.isFinite(Number(npoc))
                   ? `<div style="display:grid;grid-template-columns:52px auto;column-gap:10px;align-items:center;"><span style="color:#f6c453;">NPOC</span><span style="color:#f6c453;font-weight:600;text-align:right;">${fmt(npoc)}</span></div>`
                   : "";
-              const volLine = Number.isFinite(vol)
-                ? `<div style="display:grid;grid-template-columns:52px auto;column-gap:10px;align-items:center;"><span style="color:#9eb0d8;">VOL</span><span style="font-weight:600;text-align:right;">${fmt(vol)}</span></div>`
-                : "";
               return `
                 <div style="min-width:180px;">
                   <div style="font-size:12px;color:#9eb0d8;letter-spacing:0.2px;padding-bottom:8px;border-bottom:1px solid rgba(76,114,255,0.22);">${point?.axisValueLabel || ""}</div>
@@ -458,7 +463,6 @@
                   <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#4c72ff;">POC</span><span style="color:#4c72ff;font-weight:700;text-align:right;">${fmt(poc)}</span></div>
                   <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#8ba5ff;">VAL</span><span style="color:#8ba5ff;font-weight:600;text-align:right;">${fmt(val)}</span></div>
                   ${npocLine}
-                  ${volLine}
                 </div>
               `;
             },

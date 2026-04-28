@@ -175,28 +175,18 @@
           encodeURIComponent(interval) +
           "&limit=" +
           encodeURIComponent(limit);
-        const candidates = ["/api/klines?" + queryStr, "https://fapi.binance.com/fapi/v1/klines?" + queryStr];
-        const tasks = candidates.map((url) =>
-          (async () => {
-            let lastError = null;
-            for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-              try {
-                const raw = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
-                return normalizeKlinesResponse(raw);
-              } catch (error) {
-                lastError = error;
-                if (attempt < MAX_RETRIES) await sleep(RETRY_BASE_MS * 2 ** attempt);
-              }
-            }
-            throw lastError || new Error("request_failed");
-          })()
-        );
-        const settled = await Promise.allSettled(tasks);
-        const winner = settled.find((item) => item.status === "fulfilled");
-        if (winner && winner.status === "fulfilled") return winner.value;
-        const firstErr =
-          settled.find((item) => item.status === "rejected")?.reason || new Error("行情请求失败");
-        throw firstErr;
+        const url = "https://fapi.binance.com/fapi/v1/klines?" + queryStr;
+        let lastError = null;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+          try {
+            const raw = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
+            return normalizeKlinesResponse(raw);
+          } catch (error) {
+            lastError = error;
+            if (attempt < MAX_RETRIES) await sleep(RETRY_BASE_MS * 2 ** attempt);
+          }
+        }
+        throw lastError || new Error("行情请求失败");
       }
 
       function stopPolling() {

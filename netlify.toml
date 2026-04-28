@@ -1,7 +1,0 @@
-[build]
-  functions = "netlify/functions"
-
-[[redirects]]
-  from = "/api/klines"
-  to = "/.netlify/functions/klines"
-  status = 200

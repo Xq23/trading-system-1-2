@@ -178,33 +178,20 @@
           encodeURIComponent(interval) +
           "&limit=" +
           encodeURIComponent(limit);
-        const candidates = [
-          { url: "/api/klines?" + queryStr, source: "proxy" },
-          { url: "https://fapi.binance.com/fapi/v1/klines?" + queryStr, source: "binance" },
-        ];
-        const tasks = candidates.map((target) =>
-          (async () => {
-            let lastError = null;
-            for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-              try {
-                const raw = await fetchJsonWithTimeout(target.url, REQUEST_TIMEOUT_MS);
-                return { raw: normalizeKlinesResponse(raw), source: target.source };
-              } catch (error) {
-                lastError = error;
-                if (attempt < MAX_RETRIES) {
-                  await sleep(RETRY_BASE_MS * 2 ** attempt);
-                }
-              }
+        const url = "https://fapi.binance.com/fapi/v1/klines?" + queryStr;
+        let lastError = null;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+          try {
+            const raw = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
+            return { raw: normalizeKlinesResponse(raw), source: "binance" };
+          } catch (error) {
+            lastError = error;
+            if (attempt < MAX_RETRIES) {
+              await sleep(RETRY_BASE_MS * 2 ** attempt);
             }
-            throw lastError || new Error(target.source + " 请求失败");
-          })()
-        );
-        const settled = await Promise.allSettled(tasks);
-        const winner = settled.find((item) => item.status === "fulfilled");
-        if (winner && winner.status === "fulfilled") return winner.value;
-        const firstErr =
-          settled.find((item) => item.status === "rejected")?.reason || new Error("行情请求失败");
-        throw firstErr;
+          }
+        }
+        throw lastError || new Error("行情请求失败");
       }
 
       function stopPolling() {

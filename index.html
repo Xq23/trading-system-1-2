@@ -191,6 +191,8 @@
       const MAX_RETRIES = 2;
       const RETRY_BASE_MS = 350;
       const POLL_INTERVAL_MS = 10000;
+      /** 右侧预留空类目档（便于拖拽/缩放末尾留白） */
+      const KLINE_X_GAP = 20;
       let isLoading = false;
       let pollTimer = null;
 
@@ -419,7 +421,7 @@
       }
 
       function buildOption(
-        timestamps,
+        categoryLabels,
         candles,
         volumeValues,
         volumeColors,
@@ -433,12 +435,14 @@
         ohlcRows,
         prevExtendVah,
         prevExtendPoc,
-        prevExtendVal
+        prevExtendVal,
+        categoryTimesFull
       ) {
         const narrowPhone =
           typeof window !== "undefined" &&
           window.matchMedia("(max-width: 430px)").matches;
-        const gridLeft = narrowPhone ? 40 : 52;
+        /* Y 轴在右侧，左侧不留额外 gutter */
+        const gridLeft = 0;
         const gridRight = narrowPhone ? 52 : 92;
         const gridTop = narrowPhone ? 22 : 30;
         const gridMainH = narrowPhone ? "66%" : "70%";
@@ -455,6 +459,17 @@
         const currentBandDelta = vpBands.vah.map((v, i) =>
           i >= currentPeriodStart && v != null && vpBands.val[i] != null ? v - vpBands.val[i] : null
         );
+
+        let lastRealCatIdx = categoryLabels.length - 1;
+        while (
+          lastRealCatIdx >= 0 &&
+          typeof categoryLabels[lastRealCatIdx] === "string" &&
+          String(categoryLabels[lastRealCatIdx]).startsWith("__pad_")
+        ) {
+          lastRealCatIdx -= 1;
+        }
+        const lastCategoryForMark =
+          lastRealCatIdx >= 0 ? categoryLabels[lastRealCatIdx] : categoryLabels[categoryLabels.length - 1];
 
         return {
           backgroundColor: "#0b1220",
@@ -490,13 +505,17 @@
               const npoc = npocSeries[dataIndex];
               const isSpikeBar = Boolean(spikeFlags[dataIndex]);
               const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "--");
+              const headerTime =
+                dataIndex >= 0 && categoryTimesFull[dataIndex]
+                  ? categoryTimesFull[dataIndex]
+                  : point?.axisValueLabel || "";
               const npocLine =
                 isSpikeBar && Number.isFinite(Number(npoc))
                   ? `<div style="display:grid;grid-template-columns:52px auto;column-gap:10px;align-items:center;"><span style="color:#f6c453;">NPOC</span><span style="color:#f6c453;font-weight:600;text-align:right;">${fmt(npoc)}</span></div>`
                   : "";
               return `
                 <div style="min-width:180px;">
-                  <div style="font-size:12px;color:#9eb0d8;letter-spacing:0.2px;padding-bottom:8px;border-bottom:1px solid rgba(76,114,255,0.22);">${point?.axisValueLabel || ""}</div>
+                  <div style="font-size:12px;color:#9eb0d8;letter-spacing:0.2px;padding-bottom:8px;border-bottom:1px solid rgba(76,114,255,0.22);">${headerTime}</div>
                   <div style="padding:8px 0 6px 0;">
                     <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#9eb0d8;">开盘</span><span style="font-weight:600;text-align:right;">${fmt(open)}</span></div>
                     <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#9eb0d8;">收盘</span><span style="font-weight:600;text-align:right;">${fmt(close)}</span></div>
@@ -519,30 +538,37 @@
           xAxis: [
             {
               type: "category",
-              data: timestamps,
-              boundaryGap: true,
+              data: categoryLabels,
+              /* true 会在左右各留一段“轴端空白”，左侧会显得很空；Y 轴在右，左缘应贴齐 */
+              boundaryGap: false,
               axisLine: { lineStyle: { color: "#2d3b59" } },
-              axisLabel: {
-                color: "#9eb0d8",
-                showMaxLabel: true,
-                formatter: (val) =>
-                  typeof val === "string" && val.startsWith("__pad_") ? "" : val,
-              },
+              axisLabel: { show: false },
               splitLine: { show: true, lineStyle: { color: "#1c2946" } },
               min: "dataMin",
-              max: (value) => Math.min(value.max + 20, Math.max(0, timestamps.length - 1)),
+              max: (value) => Math.min(value.max + KLINE_X_GAP, Math.max(0, categoryLabels.length - 1)),
             },
             {
               type: "category",
               gridIndex: 1,
-              data: timestamps,
-              boundaryGap: true,
+              data: categoryLabels,
+              boundaryGap: false,
               axisLine: { lineStyle: { color: "#2d3b59" } },
-              axisLabel: { show: false },
+              axisLabel: {
+                show: true,
+                color: "#9eb0d8",
+                showMaxLabel: true,
+                hideOverlap: true,
+                formatter: (val) => {
+                  if (typeof val !== "string" || val.startsWith("__pad_")) return "";
+                  const m = val.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+                  if (m) return `${Number(m[2])}-${Number(m[3])} ${m[4]}:${m[5]}`;
+                  return val;
+                },
+              },
               axisTick: { show: false },
               splitLine: { show: true, lineStyle: { color: "#1c2946" } },
               min: "dataMin",
-              max: (value) => Math.min(value.max + 20, Math.max(0, timestamps.length - 1)),
+              max: (value) => Math.min(value.max + KLINE_X_GAP, Math.max(0, categoryLabels.length - 1)),
             },
           ],
           yAxis: [
@@ -631,7 +657,7 @@
                   padding: [3, 6],
                   formatter: () => `最新 ${Math.round(lastClose)}`,
                 },
-                data: [{ coord: [timestamps[timestamps.length - 1], lastClose], value: lastClose }],
+                data: [{ coord: [lastCategoryForMark, lastClose], value: lastClose }],
               },
             },
             { name: "NPOC", type: "scatter", symbol: "circle", symbolSize: 8, data: npocPoints, itemStyle: { color: "#f6c453", borderColor: "#ffe49a", borderWidth: 1, shadowBlur: 8, shadowColor: "rgba(246,196,83,0.5)" }, z: 10 },
@@ -650,7 +676,7 @@
           statusTextEl.textContent = "正在加载 " + interval + " 数据...";
           const { raw, source } = await requestKlines(activeSymbol.exchangeSymbol, interval, 500);
 
-          const timestamps = raw.map((item) => {
+          const categoryTimesFull = raw.map((item) => {
             const d = new Date(Number(item[0]));
             const y = d.getFullYear();
             const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -658,6 +684,15 @@
             const hh = String(d.getHours()).padStart(2, "0");
             const mm = String(d.getMinutes()).padStart(2, "0");
             return `${y}-${m}-${day} ${hh}:${mm}`;
+          });
+          /* 轴上直接显示短类目（不依赖 axisLabel.formatter，避免合并不生效或线上未更新时仍显示全长） */
+          const categoryLabelsAxis = raw.map((item) => {
+            const d = new Date(Number(item[0]));
+            const mo = d.getMonth() + 1;
+            const day = d.getDate();
+            const hh = String(d.getHours()).padStart(2, "0");
+            const mm = String(d.getMinutes()).padStart(2, "0");
+            return `${mo}-${day} ${hh}:${mm}`;
           });
           const data = raw.map((item) => [Number(item[1]), Number(item[4]), Number(item[3]), Number(item[2])]);
           const volumeSignal = calcVolumeSignals(raw, 34, 3.0);
@@ -700,18 +735,21 @@
           if (!Number.isFinite(last)) throw new Error("最新价格异常");
           const { prevExtendVah, prevExtendPoc, prevExtendVal } = computePrevPeriodExtendVp(raw, interval, vpBands);
 
-          const X_GAP = 20;
-          const padArr = (arr, fill) => arr.concat(Array(X_GAP).fill(fill));
-          const timestampsX = timestamps.concat(Array.from({ length: X_GAP }, (_, i) => `__pad_${i}`));
-          const dataEnhancedX = dataEnhanced.concat(Array(X_GAP).fill("-"));
+          const padArr = (arr, fill) => arr.concat(Array(KLINE_X_GAP).fill(fill));
+          const categoryLabelsX = categoryLabelsAxis.concat(
+            Array.from({ length: KLINE_X_GAP }, (_, i) => `__pad_${i}`)
+          );
+          const categoryTimesFullX = categoryTimesFull.concat(Array(KLINE_X_GAP).fill(""));
+          const dataEnhancedX = dataEnhanced.concat(Array(KLINE_X_GAP).fill("-"));
           const volumeValuesX = padArr(volumeValues, null);
-          const volumeColorsX = volumeColors.concat(Array(X_GAP).fill("transparent"));
-          const dataX = data.concat(Array(X_GAP).fill(null).map(() => [NaN, NaN, NaN, NaN]));
+          const volumeColorsX = volumeColors.concat(Array(KLINE_X_GAP).fill("transparent"));
+          const dataX = data.concat(Array(KLINE_X_GAP).fill(null).map(() => [NaN, NaN, NaN, NaN]));
           const vpBandsX = { ...vpBands, poc: padArr(vpBands.poc, null), vah: padArr(vpBands.vah, null), val: padArr(vpBands.val, null) };
 
+          chart.clear();
           chart.setOption(
             buildOption(
-              timestampsX,
+              categoryLabelsX,
               dataEnhancedX,
               volumeValuesX,
               volumeColorsX,
@@ -728,9 +766,10 @@
               dataX,
               padArr(prevExtendVah, null),
               padArr(prevExtendPoc, null),
-              padArr(prevExtendVal, null)
+              padArr(prevExtendVal, null),
+              categoryTimesFullX
             ),
-            true
+            { notMerge: true }
           );
           statusTextEl.textContent =
             "最新收盘: " +

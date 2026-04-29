@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>永续合约详情</title>
     <style>
       :root {
@@ -76,6 +76,53 @@
       }
       .error {
         color: #ff9090;
+      }
+
+      /* 手机浏览器窄屏（含 iPhone 13 Pro 390pt 宽）：仅在此范围覆盖布局，桌面样式不变 */
+      @media (max-width: 430px) {
+        .container {
+          max-width: none;
+          padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+            max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+        }
+        .toolbar {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .toolbar strong {
+          font-size: 15px;
+          line-height: 1.35;
+          word-break: break-word;
+        }
+        .toolbar label {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 6px;
+          font-size: 13px;
+        }
+        #overview {
+          margin-left: 0;
+          align-self: stretch;
+          width: 100%;
+        }
+        #chart {
+          min-height: min(52vh, 420px);
+          border-radius: 10px;
+        }
+        .status {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 10px;
+          padding-top: 10px;
+          font-size: 12px;
+        }
+        .status button {
+          width: 100%;
+          padding: 10px 12px;
+        }
       }
     </style>
   </head>
@@ -388,6 +435,17 @@
         prevExtendPoc,
         prevExtendVal
       ) {
+        const narrowPhone =
+          typeof window !== "undefined" &&
+          window.matchMedia("(max-width: 430px)").matches;
+        const gridLeft = narrowPhone ? 40 : 52;
+        const gridRight = narrowPhone ? 52 : 92;
+        const gridTop = narrowPhone ? 22 : 30;
+        const gridMainH = narrowPhone ? "66%" : "70%";
+        const gridVolTop = narrowPhone ? "77%" : "79%";
+        const gridVolH = narrowPhone ? "17%" : "15%";
+        const axisMargin = narrowPhone ? 6 : 10;
+
         const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
         const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
         const historyBandDelta = vpBands.vah.map((v, i) =>
@@ -455,8 +513,8 @@
             },
           },
           grid: [
-            { left: 52, right: 92, top: 30, height: "70%" },
-            { left: 52, right: 92, top: "79%", height: "15%" },
+            { left: gridLeft, right: gridRight, top: gridTop, height: gridMainH },
+            { left: gridLeft, right: gridRight, top: gridVolTop, height: gridVolH },
           ],
           xAxis: [
             {
@@ -498,7 +556,7 @@
               axisLabel: {
                 show: true,
                 color: "#9eb0d8",
-                margin: 10,
+                margin: axisMargin,
                 formatter: (val) => (Number.isFinite(Number(val)) ? String(Math.round(Number(val))) : val),
               },
               splitLine: { lineStyle: { color: "#1c2946" } },
@@ -512,7 +570,7 @@
               axisLabel: {
                 show: true,
                 color: "#9eb0d8",
-                margin: 10,
+                margin: axisMargin,
                 formatter: (val) => (Number.isFinite(Number(val)) ? String(Math.round(Number(val))) : val),
               },
               splitLine: { show: false },
@@ -723,6 +781,15 @@
         zoomState.end = 100;
       });
       window.addEventListener("resize", () => chart.resize());
+
+      const phoneLayoutMq = window.matchMedia("(max-width: 430px)");
+      let lastPhoneLayout = phoneLayoutMq.matches;
+      phoneLayoutMq.addEventListener("change", () => {
+        if (phoneLayoutMq.matches !== lastPhoneLayout) {
+          lastPhoneLayout = phoneLayoutMq.matches;
+          loadKlines();
+        }
+      });
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
           stopPolling();

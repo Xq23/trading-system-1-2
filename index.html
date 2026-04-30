@@ -135,6 +135,7 @@
           <select id="symbol">
             <option value="BTC" selected>BTC</option>
             <option value="ETH">ETH</option>
+            <option value="XAU">XAU</option>
           </select>
         </label>
         <label>
@@ -172,6 +173,7 @@
       const symbolConfig = {
         BTC: { exchangeSymbol: "BTCUSDT", title: "币安 BTC/USDT 永续 K 线" },
         ETH: { exchangeSymbol: "ETHUSDT", title: "币安 ETH/USDT 永续 K 线" },
+        XAU: { exchangeSymbol: "XAUUSDT", title: "币安 XAU/USDT 永续 K 线" },
       };
       const symbolFromQuery = query.get("symbol");
       const intervalFromQuery = query.get("interval");

@@ -136,6 +136,7 @@
           <select id="symbol-select">
             <option value="BTC" selected>BTC</option>
             <option value="ETH">ETH</option>
+            <option value="XAU">XAU</option>
           </select>
           <div id="pair-info" class="pair-info">BTC/USDT 永续合约（币安） | 最新 --</div>
         </div>
@@ -176,6 +177,7 @@
       const symbolConfig = {
         BTC: { exchangeSymbol: "BTCUSDT", pairName: "BTC/USDT 永续合约（币安）" },
         ETH: { exchangeSymbol: "ETHUSDT", pairName: "ETH/USDT 永续合约（币安）" },
+        XAU: { exchangeSymbol: "XAUUSDT", pairName: "XAU/USDT 永续合约（币安）" },
       };
       if (symbolConfig[symbolFromQuery]) symbolSelectEl.value = symbolFromQuery;
       const REQUEST_TIMEOUT_MS = 8000;

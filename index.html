@@ -219,14 +219,45 @@
         return raw;
       }
 
-      async function requestKlines(symbol, interval, limit) {
+      const INTERVAL_MINUTES = {
+        "30m": 30,
+        "4h": 240,
+        "12h": 720,
+        "1d": 1440,
+      };
+
+      /** 当前周期下与约 `days` 个日历日相当的 K 线根数（用于 Rolling） */
+      function barsForCalendarDays(interval, days) {
+        const m = INTERVAL_MINUTES[interval];
+        if (!m) return Math.max(1, days);
+        return Math.max(1, Math.ceil((days * 24 * 60) / m));
+      }
+
+      /** 收盘价的滚动算术均线（前 window-1 根为 null） */
+      function calcRollingSmaClose(raw, window) {
+        const n = raw.length;
+        const out = new Array(n).fill(null);
+        if (window <= 0 || n < window) return out;
+        let sum = 0;
+        for (let i = 0; i < window; i += 1) sum += Number(raw[i][4]);
+        out[window - 1] = sum / window;
+        for (let i = window; i < n; i += 1) {
+          sum += Number(raw[i][4]);
+          sum -= Number(raw[i - window][4]);
+          out[i] = sum / window;
+        }
+        return out;
+      }
+
+      async function requestKlines(symbol, interval, limit, endTimeMs) {
         const queryStr =
           "symbol=" +
           encodeURIComponent(symbol) +
           "&interval=" +
           encodeURIComponent(interval) +
           "&limit=" +
-          encodeURIComponent(limit);
+          encodeURIComponent(limit) +
+          (endTimeMs != null ? "&endTime=" + encodeURIComponent(String(endTimeMs)) : "");
         const url = "https://fapi.binance.com/fapi/v1/klines?" + queryStr;
         let lastError = null;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
@@ -241,6 +272,23 @@
           }
         }
         throw lastError || new Error("行情请求失败");
+      }
+
+      /** 从最新往回拼接 K 线，直到不少于 minBars 根（单请求上限 1500） */
+      async function requestKlinesHistory(symbol, interval, minBars) {
+        const MAX = 1500;
+        let merged = [];
+        let endTime = undefined;
+        while (merged.length < minBars) {
+          const need = minBars - merged.length;
+          const lim = Math.min(MAX, need);
+          const { raw } = await requestKlines(symbol, interval, lim, endTime);
+          if (!raw.length) break;
+          merged = raw.concat(merged);
+          endTime = Number(raw[0][0]) - 1;
+          if (raw.length < lim) break;
+        }
+        return merged;
       }
 
       function stopPolling() {
@@ -420,6 +468,38 @@
         return { isSpike, npoc, npocPoints };
       }
 
+      /** Rolling 线末端展示周期标签（365d / 90d / 7d） */
+      function makeRollingEndMark(categoryLabels, rollingData, enabled, tagText, color, labelOffset) {
+        if (!enabled) return undefined;
+        let i = categoryLabels.length - 1;
+        while (i >= 0 && String(categoryLabels[i]).startsWith("__pad_")) i -= 1;
+        while (i >= 0 && !Number.isFinite(Number(rollingData[i]))) i -= 1;
+        if (i < 0) return undefined;
+        const xCat = categoryLabels[i];
+        const yVal = rollingData[i];
+        return {
+          zlevel: 8,
+          symbol: "circle",
+          symbolSize: 0,
+          label: {
+            show: true,
+            position: "right",
+            distance: 5,
+            offset: labelOffset || [0, 0],
+            color,
+            fontSize: 11,
+            fontWeight: 600,
+            formatter: tagText,
+            backgroundColor: "rgba(13,21,39,0.9)",
+            borderColor: color,
+            borderWidth: 1,
+            padding: [2, 5],
+            borderRadius: 4,
+          },
+          data: [{ coord: [xCat, yVal], value: yVal }],
+        };
+      }
+
       function buildOption(
         categoryLabels,
         candles,
@@ -436,7 +516,10 @@
         prevExtendVah,
         prevExtendPoc,
         prevExtendVal,
-        categoryTimesFull
+        categoryTimesFull,
+        rolling7d,
+        rolling90d,
+        rolling365d
       ) {
         const narrowPhone =
           typeof window !== "undefined" &&
@@ -449,6 +532,9 @@
         const gridVolTop = narrowPhone ? "77%" : "79%";
         const gridVolH = narrowPhone ? "17%" : "15%";
         const axisMargin = narrowPhone ? 6 : 10;
+
+        const rollingShow7 = interval === "30m";
+        const rollingShow90365 = interval === "1d";
 
         const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
         const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
@@ -470,6 +556,31 @@
         }
         const lastCategoryForMark =
           lastRealCatIdx >= 0 ? categoryLabels[lastRealCatIdx] : categoryLabels[categoryLabels.length - 1];
+
+        const markRolling365 = makeRollingEndMark(
+          categoryLabels,
+          rolling365d,
+          rollingShow90365,
+          "365d",
+          "rgba(167,139,250,0.95)",
+          [0, 10]
+        );
+        const markRolling90 = makeRollingEndMark(
+          categoryLabels,
+          rolling90d,
+          rollingShow90365,
+          "90d",
+          "rgba(232,184,106,0.95)",
+          [0, -10]
+        );
+        const markRolling7 = makeRollingEndMark(
+          categoryLabels,
+          rolling7d,
+          rollingShow7,
+          "7d",
+          "rgba(94,234,212,0.95)",
+          [0, 0]
+        );
 
         return {
           backgroundColor: "#0b1220",
@@ -503,6 +614,9 @@
               const val = vpBands.val[dataIndex];
               const vol = Number(volumeValues[dataIndex]);
               const npoc = npocSeries[dataIndex];
+              const r7 = rolling7d[dataIndex];
+              const r90 = rolling90d[dataIndex];
+              const r365 = rolling365d[dataIndex];
               const isSpikeBar = Boolean(spikeFlags[dataIndex]);
               const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "--");
               const headerTime =
@@ -512,6 +626,24 @@
               const npocLine =
                 isSpikeBar && Number.isFinite(Number(npoc))
                   ? `<div style="display:grid;grid-template-columns:52px auto;column-gap:10px;align-items:center;"><span style="color:#f6c453;">NPOC</span><span style="color:#f6c453;font-weight:600;text-align:right;">${fmt(npoc)}</span></div>`
+                  : "";
+              const rollingBorderStyle = rollingShow90365
+                ? "1px solid rgba(232,184,106,0.28)"
+                : "1px solid rgba(94,234,212,0.22)";
+              const rollingBlock =
+                rollingShow7 || rollingShow90365
+                  ? `<div style="margin-top:6px;padding-top:6px;border-top:${rollingBorderStyle};">
+                  ${
+                    rollingShow7
+                      ? `<div style="display:grid;grid-template-columns:90px auto;column-gap:10px;"><span style="color:#5eead4;">7d Rolling</span><span style="color:#5eead4;font-weight:600;text-align:right;">${fmt(r7)}</span></div>`
+                      : ""
+                  }
+                  ${
+                    rollingShow90365
+                      ? `<div style="display:grid;grid-template-columns:90px auto;column-gap:10px;margin-top:${rollingShow7 ? "4px" : "0"};"><span style="color:#e8b86a;">90d Rolling</span><span style="color:#e8b86a;font-weight:600;text-align:right;">${fmt(r90)}</span></div><div style="display:grid;grid-template-columns:90px auto;column-gap:10px;margin-top:4px;"><span style="color:#a78bfa;">365d Rolling</span><span style="color:#a78bfa;font-weight:600;text-align:right;">${fmt(r365)}</span></div>`
+                      : ""
+                  }
+                </div>`
                   : "";
               return `
                 <div style="min-width:180px;">
@@ -526,6 +658,7 @@
                   <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#8ba5ff;">VAH</span><span style="color:#8ba5ff;font-weight:600;text-align:right;">${fmt(vah)}</span></div>
                   <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#4c72ff;">POC</span><span style="color:#4c72ff;font-weight:700;text-align:right;">${fmt(poc)}</span></div>
                   <div style="display:grid;grid-template-columns:52px auto;column-gap:10px;"><span style="color:#8ba5ff;">VAL</span><span style="color:#8ba5ff;font-weight:600;text-align:right;">${fmt(val)}</span></div>
+                  ${rollingBlock}
                   ${npocLine}
                 </div>
               `;
@@ -636,6 +769,45 @@
             { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
             { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
             {
+              name: "365d Rolling",
+              type: "line",
+              smooth: 0.12,
+              show: rollingShow90365,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              lineStyle: { width: 1.45, color: "rgba(167,139,250,0.88)", type: "solid" },
+              data: rolling365d,
+              z: 2,
+              ...(markRolling365 ? { markPoint: markRolling365 } : {}),
+            },
+            {
+              name: "90d Rolling",
+              type: "line",
+              smooth: 0.15,
+              show: rollingShow90365,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              lineStyle: { width: 1.35, color: "rgba(232,184,106,0.92)", type: "solid" },
+              data: rolling90d,
+              z: 3,
+              ...(markRolling90 ? { markPoint: markRolling90 } : {}),
+            },
+            {
+              name: "7d Rolling",
+              type: "line",
+              smooth: 0.18,
+              show: rollingShow7,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              lineStyle: { width: 1.2, color: "rgba(94,234,212,0.88)", type: "solid" },
+              data: rolling7d,
+              z: 5,
+              ...(markRolling7 ? { markPoint: markRolling7 } : {}),
+            },
+            {
               name: "K线",
               type: "candlestick",
               data: candles,
@@ -674,7 +846,32 @@
         try {
           statusTextEl.classList.remove("error");
           statusTextEl.textContent = "正在加载 " + interval + " 数据...";
-          const { raw, source } = await requestKlines(activeSymbol.exchangeSymbol, interval, 500);
+          const wantRolling7 = interval === "30m";
+          const wantRolling90365 = interval === "1d";
+          let Wmax = 0;
+          if (wantRolling7) Wmax = Math.max(Wmax, barsForCalendarDays(interval, 7));
+          if (wantRolling90365) {
+            Wmax = Math.max(Wmax, barsForCalendarDays(interval, 90));
+            Wmax = Math.max(Wmax, barsForCalendarDays(interval, 365));
+          }
+          const historyNeed = Wmax > 0 ? 500 + Wmax - 1 : 500;
+          const mergedHistory = await requestKlinesHistory(activeSymbol.exchangeSymbol, interval, historyNeed);
+          const raw = mergedHistory.slice(-500);
+          const nullBarRow = () => new Array(500).fill(null);
+          let roll7 = nullBarRow();
+          let roll90 = nullBarRow();
+          let roll365 = nullBarRow();
+          if (wantRolling7) {
+            const W7 = barsForCalendarDays(interval, 7);
+            roll7 = calcRollingSmaClose(mergedHistory, W7).slice(-500);
+          }
+          if (wantRolling90365) {
+            const W90 = barsForCalendarDays(interval, 90);
+            const W365 = barsForCalendarDays(interval, 365);
+            roll90 = calcRollingSmaClose(mergedHistory, W90).slice(-500);
+            roll365 = calcRollingSmaClose(mergedHistory, W365).slice(-500);
+          }
+          const source = "binance";
 
           const categoryTimesFull = raw.map((item) => {
             const d = new Date(Number(item[0]));
@@ -745,6 +942,9 @@
           const volumeColorsX = volumeColors.concat(Array(KLINE_X_GAP).fill("transparent"));
           const dataX = data.concat(Array(KLINE_X_GAP).fill(null).map(() => [NaN, NaN, NaN, NaN]));
           const vpBandsX = { ...vpBands, poc: padArr(vpBands.poc, null), vah: padArr(vpBands.vah, null), val: padArr(vpBands.val, null) };
+          const rolling7dX = padArr(roll7, null);
+          const rolling90dX = padArr(roll90, null);
+          const rolling365dX = padArr(roll365, null);
 
           chart.clear();
           chart.setOption(
@@ -767,7 +967,10 @@
               padArr(prevExtendVah, null),
               padArr(prevExtendPoc, null),
               padArr(prevExtendVal, null),
-              categoryTimesFullX
+              categoryTimesFullX,
+              rolling7dX,
+              rolling90dX,
+              rolling365dX
             ),
             { notMerge: true }
           );

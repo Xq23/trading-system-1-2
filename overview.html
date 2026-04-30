@@ -435,6 +435,8 @@
         const cfg = symbolConfig[symbolSelectEl.value];
         const latestText = Number.isFinite(Number(latestPrice)) ? Number(latestPrice).toFixed(2) : "--";
         pairInfoEl.textContent = `${cfg.pairName} | 最新 ${latestText}`;
+        const shortPair = String(cfg.exchangeSymbol).replace(/USDT$/i, "/USDT");
+        document.title = `${shortPair} ${latestText} · 永续概览`;
       }
       async function loadOne(def) {
         const metaEl = document.querySelector(`[data-meta="${def.interval}"]`);

@@ -180,8 +180,17 @@
       function getActiveSymbolConfig() {
         return symbolConfig[symbolEl.value] || symbolConfig.BTC;
       }
+      /** 浏览器标签：币种 / 最新价（与站内报价一致） */
+      function updateDocumentTitle(lastPrice) {
+        const cfg = getActiveSymbolConfig();
+        const pair = String(cfg.exchangeSymbol).replace(/USDT$/i, "/USDT");
+        const p = Number(lastPrice);
+        const priceStr = Number.isFinite(p) ? p.toFixed(2) : "--";
+        document.title = `${pair} ${priceStr} · 永续详情`;
+      }
       function refreshTitle() {
         symbolTitleEl.textContent = getActiveSymbolConfig().title;
+        updateDocumentTitle(NaN);
       }
       refreshTitle();
 
@@ -985,9 +994,11 @@
             source +
             " | 更新时间: " +
             new Date().toLocaleTimeString();
+          updateDocumentTitle(last);
         } catch (error) {
           statusTextEl.classList.add("error");
           statusTextEl.textContent = "加载失败: " + error.message;
+          updateDocumentTitle(NaN);
         } finally {
           isLoading = false;
         }

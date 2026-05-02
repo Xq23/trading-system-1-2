@@ -396,6 +396,11 @@
         const currentBandDelta = vpBands.vah.map((v, i) =>
           i >= currentPeriodStart && v != null && vpBands.val[i] != null ? v - vpBands.val[i] : null
         );
+        const prevExtendBandDelta = prevExtendVah.map((v, i) =>
+          v != null && prevExtendVal[i] != null ? v - prevExtendVal[i] : null
+        );
+        const VP_AREA_PAST = "rgba(100, 108, 125, 0.58)";
+        const VP_AREA_CURRENT = "rgba(238, 241, 246, 0.32)";
         return {
           animation: false,
           backgroundColor: "#0d1527",
@@ -419,17 +424,52 @@
             splitLine: { lineStyle: { color: "#1c2946" } },
           },
           series: [
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-history", data: historyVal },
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.04)" }, stack: "vp-band-history", data: historyBandDelta },
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-current", data: currentVal },
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.10)" }, stack: "vp-band-current", data: currentBandDelta },
-            { name: "上周期VAH延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVah, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.34)" } },
-            { name: "上周期POC延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendPoc, lineStyle: { width: 0.9, type: "dashed", color: "rgba(76,114,255,0.34)" } },
-            { name: "上周期VAL延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVal, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.26)" } },
-            { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
-            { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
-            { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
-            { type: "candlestick", silent: true, data: candles, itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" } },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 1, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-history", data: historyVal },
+            {
+              type: "line",
+              smooth: 0.2,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              z: 1,
+              lineStyle: { width: 0, color: "transparent" },
+              areaStyle: { color: VP_AREA_PAST },
+              stack: "vp-band-history",
+              data: historyBandDelta,
+            },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 1, lineStyle: { width: 0, color: "transparent" }, stack: "vp-prev-extend", data: prevExtendVal },
+            {
+              type: "line",
+              smooth: 0.2,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              z: 1,
+              lineStyle: { width: 0, color: "transparent" },
+              areaStyle: { color: VP_AREA_PAST },
+              stack: "vp-prev-extend",
+              data: prevExtendBandDelta,
+            },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 1, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-current", data: currentVal },
+            {
+              type: "line",
+              smooth: 0.2,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              z: 1,
+              lineStyle: { width: 0, color: "transparent" },
+              areaStyle: { color: VP_AREA_CURRENT },
+              stack: "vp-band-current",
+              data: currentBandDelta,
+            },
+            { name: "上周期VAH延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, z: 2, data: prevExtendVah, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.34)" } },
+            { name: "上周期POC延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, z: 2, data: prevExtendPoc, lineStyle: { width: 0.9, type: "dashed", color: "rgba(76,114,255,0.34)" } },
+            { name: "上周期VAL延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, z: 2, data: prevExtendVal, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.26)" } },
+            { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
+            { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
+            { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
+            { type: "candlestick", silent: true, z: 20, data: candles, itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" } },
           ],
         };
       }

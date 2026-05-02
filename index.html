@@ -489,7 +489,6 @@
         const xCat = categoryLabels[i];
         const yVal = rollingData[i];
         return {
-          zlevel: 8,
           symbol: "circle",
           symbolSize: 0,
           label: {
@@ -547,6 +546,10 @@
         const rollingShow7 = interval === "30m";
         const rollingShow90365 = interval === "1d";
 
+        /* VP 包裹：往期深灰、当期浅灰（与上一版配色对调） */
+        const VP_AREA_PAST = "rgba(100, 108, 125, 0.58)";
+        const VP_AREA_CURRENT = "rgba(238, 241, 246, 0.32)";
+
         const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
         const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
         const historyBandDelta = vpBands.vah.map((v, i) =>
@@ -555,6 +558,9 @@
         const currentVal = vpBands.val.map((v, i) => (i >= currentPeriodStart ? v : null));
         const currentBandDelta = vpBands.vah.map((v, i) =>
           i >= currentPeriodStart && v != null && vpBands.val[i] != null ? v - vpBands.val[i] : null
+        );
+        const prevExtendBandDelta = prevExtendVah.map((v, i) =>
+          v != null && prevExtendVal[i] != null ? v - prevExtendVal[i] : null
         );
 
         let lastRealCatIdx = categoryLabels.length - 1;
@@ -769,16 +775,51 @@
             },
           ],
           series: [
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-history", data: historyVal },
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.04)" }, stack: "vp-band-history", data: historyBandDelta },
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-current", data: currentVal },
-            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 0, color: "transparent" }, areaStyle: { color: "rgba(139,165,255,0.10)" }, stack: "vp-band-current", data: currentBandDelta },
-            { name: "上周期VAH延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVah, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.34)" } },
-            { name: "上周期POC延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendPoc, lineStyle: { width: 0.9, type: "dashed", color: "rgba(76,114,255,0.34)" } },
-            { name: "上周期VAL延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, data: prevExtendVal, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.26)" } },
-            { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
-            { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
-            { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 1, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-history", data: historyVal },
+            {
+              type: "line",
+              smooth: 0.2,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              z: 1,
+              lineStyle: { width: 0, color: "transparent" },
+              areaStyle: { color: VP_AREA_PAST },
+              stack: "vp-band-history",
+              data: historyBandDelta,
+            },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 1, lineStyle: { width: 0, color: "transparent" }, stack: "vp-prev-extend", data: prevExtendVal },
+            {
+              type: "line",
+              smooth: 0.2,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              z: 1,
+              lineStyle: { width: 0, color: "transparent" },
+              areaStyle: { color: VP_AREA_PAST },
+              stack: "vp-prev-extend",
+              data: prevExtendBandDelta,
+            },
+            { type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 1, lineStyle: { width: 0, color: "transparent" }, stack: "vp-band-current", data: currentVal },
+            {
+              type: "line",
+              smooth: 0.2,
+              showSymbol: false,
+              sampling: "lttb",
+              silent: true,
+              z: 1,
+              lineStyle: { width: 0, color: "transparent" },
+              areaStyle: { color: VP_AREA_CURRENT },
+              stack: "vp-band-current",
+              data: currentBandDelta,
+            },
+            { name: "上周期VAH延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, z: 2, data: prevExtendVah, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.34)" } },
+            { name: "上周期POC延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, z: 2, data: prevExtendPoc, lineStyle: { width: 0.9, type: "dashed", color: "rgba(76,114,255,0.34)" } },
+            { name: "上周期VAL延长", type: "line", smooth: false, showSymbol: false, sampling: "none", silent: true, z: 2, data: prevExtendVal, lineStyle: { width: 0.9, type: "dashed", color: "rgba(139,165,255,0.26)" } },
+            { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
+            { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
+            { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
             {
               name: "365d Rolling",
               type: "line",
@@ -789,7 +830,7 @@
               silent: true,
               lineStyle: { width: 1.45, color: "rgba(167,139,250,0.88)", type: "solid" },
               data: rolling365d,
-              z: 2,
+              z: 4,
               ...(markRolling365 ? { markPoint: markRolling365 } : {}),
             },
             {
@@ -802,7 +843,7 @@
               silent: true,
               lineStyle: { width: 1.35, color: "rgba(232,184,106,0.92)", type: "solid" },
               data: rolling90d,
-              z: 3,
+              z: 4,
               ...(markRolling90 ? { markPoint: markRolling90 } : {}),
             },
             {
@@ -815,12 +856,13 @@
               silent: true,
               lineStyle: { width: 1.2, color: "rgba(94,234,212,0.88)", type: "solid" },
               data: rolling7d,
-              z: 5,
+              z: 4,
               ...(markRolling7 ? { markPoint: markRolling7 } : {}),
             },
             {
               name: "K线",
               type: "candlestick",
+              z: 20,
               data: candles,
               progressive: 1000,
               progressiveThreshold: 1500,
@@ -843,7 +885,7 @@
                 data: [{ coord: [lastCategoryForMark, lastClose], value: lastClose }],
               },
             },
-            { name: "NPOC", type: "scatter", symbol: "circle", symbolSize: 8, data: npocPoints, itemStyle: { color: "#f6c453", borderColor: "#ffe49a", borderWidth: 1, shadowBlur: 8, shadowColor: "rgba(246,196,83,0.5)" }, z: 10 },
+            { name: "NPOC", type: "scatter", symbol: "circle", symbolSize: 8, data: npocPoints, itemStyle: { color: "#f6c453", borderColor: "#ffe49a", borderWidth: 1, shadowBlur: 8, shadowColor: "rgba(246,196,83,0.5)" }, z: 21 },
             { name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: volumeValues, itemStyle: { color: (p) => volumeColors[p.dataIndex] ?? "#17c96499" } },
           ],
         };

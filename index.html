@@ -204,6 +204,8 @@
       const POLL_INTERVAL_MS = 10000;
       /** 右侧预留空类目档（便于拖拽/缩放末尾留白） */
       const KLINE_X_GAP = 20;
+      /** 主图单次加载并在图上展示的 K 线根数 */
+      const KLINE_COUNT = 700;
       let isLoading = false;
       let pollTimer = null;
 
@@ -907,22 +909,22 @@
             Wmax = Math.max(Wmax, barsForCalendarDays(interval, 90));
             Wmax = Math.max(Wmax, barsForCalendarDays(interval, 365));
           }
-          const historyNeed = Wmax > 0 ? 500 + Wmax - 1 : 500;
+          const historyNeed = Wmax > 0 ? KLINE_COUNT + Wmax - 1 : KLINE_COUNT;
           const mergedHistory = await requestKlinesHistory(activeSymbol.exchangeSymbol, interval, historyNeed);
-          const raw = mergedHistory.slice(-500);
-          const nullBarRow = () => new Array(500).fill(null);
+          const raw = mergedHistory.slice(-KLINE_COUNT);
+          const nullBarRow = () => new Array(KLINE_COUNT).fill(null);
           let roll7 = nullBarRow();
           let roll90 = nullBarRow();
           let roll365 = nullBarRow();
           if (wantRolling7) {
             const W7 = barsForCalendarDays(interval, 7);
-            roll7 = calcRollingSmaClose(mergedHistory, W7).slice(-500);
+            roll7 = calcRollingSmaClose(mergedHistory, W7).slice(-KLINE_COUNT);
           }
           if (wantRolling90365) {
             const W90 = barsForCalendarDays(interval, 90);
             const W365 = barsForCalendarDays(interval, 365);
-            roll90 = calcRollingSmaClose(mergedHistory, W90).slice(-500);
-            roll365 = calcRollingSmaClose(mergedHistory, W365).slice(-500);
+            roll90 = calcRollingSmaClose(mergedHistory, W90).slice(-KLINE_COUNT);
+            roll365 = calcRollingSmaClose(mergedHistory, W365).slice(-KLINE_COUNT);
           }
           const source = "binance";
 

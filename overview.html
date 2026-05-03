@@ -184,6 +184,7 @@
       const MAX_RETRIES = 2;
       const RETRY_BASE_MS = 350;
       const POLL_INTERVAL_MS = 15000;
+      const KLINE_COUNT = 700;
       let isLoading = false;
       let pollTimer = null;
 
@@ -306,6 +307,7 @@
         if (interval === "1d") return getYearKeyUTC(ms);
         return 0;
       }
+
       function calcVpBands(raw, interval) {
         const result = {
           poc: new Array(raw.length).fill(null),
@@ -484,7 +486,7 @@
         const metaEl = document.querySelector(`[data-meta="${def.interval}"]`);
         const cfg = symbolConfig[symbolSelectEl.value];
         try {
-          const raw = await requestKlines(cfg.exchangeSymbol, def.interval, 300);
+          const raw = await requestKlines(cfg.exchangeSymbol, def.interval, KLINE_COUNT);
           const timestamps = raw.map((item) => formatTime(Number(item[0])));
           const candles = raw.map((item) => [Number(item[1]), Number(item[4]), Number(item[3]), Number(item[2])]);
           const vpBands = calcVpBands(raw, def.interval);

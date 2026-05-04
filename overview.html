@@ -137,6 +137,11 @@
             <option value="BTC" selected>BTC</option>
             <option value="ETH">ETH</option>
             <option value="XAU">XAU</option>
+            <option value="SOL">SOL</option>
+            <option value="ZEC">ZEC</option>
+            <option value="DOGE">DOGE</option>
+            <option value="HYPE">HYPE</option>
+            <option value="GUA">GUA</option>
           </select>
           <div id="pair-info" class="pair-info">BTC/USDT 永续合约（币安） | 最新 --</div>
         </div>
@@ -178,6 +183,11 @@
         BTC: { exchangeSymbol: "BTCUSDT", pairName: "BTC/USDT 永续合约（币安）" },
         ETH: { exchangeSymbol: "ETHUSDT", pairName: "ETH/USDT 永续合约（币安）" },
         XAU: { exchangeSymbol: "XAUUSDT", pairName: "XAU/USDT 永续合约（币安）" },
+        SOL: { exchangeSymbol: "SOLUSDT", pairName: "SOL/USDT 永续合约（币安）" },
+        ZEC: { exchangeSymbol: "ZECUSDT", pairName: "ZEC/USDT 永续合约（币安）" },
+        DOGE: { exchangeSymbol: "DOGEUSDT", pairName: "DOGE/USDT 永续合约（币安）" },
+        HYPE: { exchangeSymbol: "HYPEUSDT", pairName: "HYPE/USDT 永续合约（币安）" },
+        GUA: { exchangeSymbol: "GUAUSDT", pairName: "GUA/USDT 永续合约（币安）" },
       };
       if (symbolConfig[symbolFromQuery]) symbolSelectEl.value = symbolFromQuery;
       const REQUEST_TIMEOUT_MS = 8000;
@@ -187,6 +197,30 @@
       const KLINE_COUNT = 700;
       let isLoading = false;
       let pollTimer = null;
+
+      function getPriceDecimals(value) {
+        const n = Math.abs(Number(value));
+        if (!Number.isFinite(n)) return 2;
+        if (n >= 1000) return 0;
+        if (n >= 100) return 1;
+        if (n >= 1) return 2;
+        if (n >= 0.1) return 4;
+        if (n >= 0.01) return 5;
+        return 6;
+      }
+      function formatPrice(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return "--";
+        return n.toFixed(getPriceDecimals(n));
+      }
+      function priceAxisPadding(min, max) {
+        const lo = Number(min);
+        const hi = Number(max);
+        if (!Number.isFinite(lo) || !Number.isFinite(hi)) return 1;
+        const range = Math.abs(hi - lo);
+        const reference = Math.max(Math.abs(lo), Math.abs(hi), 1e-8);
+        return Math.max(range * 0.1, reference * 0.001, 1e-8);
+      }
 
       function sleep(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
@@ -420,9 +454,11 @@
           yAxis: {
             scale: true,
             position: "right",
+            min: (v) => v.min - priceAxisPadding(v.min, v.max),
+            max: (v) => v.max + priceAxisPadding(v.min, v.max),
             axisLine: { lineStyle: { color: "#2d3b59" } },
             axisTick: { show: false },
-            axisLabel: { color: "#9eb0d8", formatter: (val) => (Number.isFinite(Number(val)) ? String(Math.round(Number(val))) : "") },
+            axisLabel: { color: "#9eb0d8", formatter: (val) => formatPrice(val) },
             splitLine: { lineStyle: { color: "#1c2946" } },
           },
           series: [
@@ -477,7 +513,7 @@
       }
       function updatePairInfo(latestPrice) {
         const cfg = symbolConfig[symbolSelectEl.value];
-        const latestText = Number.isFinite(Number(latestPrice)) ? Number(latestPrice).toFixed(2) : "--";
+        const latestText = formatPrice(latestPrice);
         pairInfoEl.textContent = `${cfg.pairName} | 最新 ${latestText}`;
         const shortPair = String(cfg.exchangeSymbol).replace(/USDT$/i, "/USDT");
         document.title = `${shortPair} ${latestText} · 永续概览`;

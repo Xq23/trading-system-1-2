@@ -48,6 +48,83 @@
         color: #9eb0d8;
         font-size: 13px;
       }
+      .symbol-bar button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      .symbol-bar button:hover {
+        background: #1d2a45;
+      }
+      .symbol-editor {
+        display: grid;
+        grid-template-columns: minmax(180px, 280px) auto 1fr;
+        gap: 8px;
+        align-items: start;
+        padding: 10px;
+        border: 1px solid #2d3b59;
+        border-radius: 10px;
+        background: #0d1527;
+      }
+      .symbol-editor[hidden] {
+        display: none !important;
+      }
+      .symbol-editor input {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px 10px;
+        outline: none;
+      }
+      .symbol-editor button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      .symbol-editor button:hover {
+        background: #1d2a45;
+      }
+      .symbol-editor-tip {
+        grid-column: 1 / -1;
+        color: #7f92bd;
+        font-size: 12px;
+      }
+      .symbol-editor-message {
+        color: #9eb0d8;
+        font-size: 12px;
+        line-height: 32px;
+        min-height: 32px;
+      }
+      .symbol-chip-list {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .symbol-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 7px;
+        border: 1px solid #2d3b59;
+        border-radius: 999px;
+        background: #111b2f;
+        color: #dbe6ff;
+        font-size: 12px;
+      }
+      .symbol-chip button {
+        padding: 0 5px;
+        border-radius: 999px;
+        line-height: 18px;
+        color: #ffb3c8;
+      }
       .grid {
         flex: 1 1 auto;
         min-height: 0;
@@ -111,6 +188,12 @@
           line-height: 1.45;
           word-break: break-word;
         }
+        .symbol-editor {
+          grid-template-columns: 1fr;
+        }
+        .symbol-editor-message {
+          line-height: 1.4;
+        }
         .grid {
           gap: 8px;
           grid-template-rows: repeat(2, minmax(140px, 1fr));
@@ -143,8 +226,16 @@
             <option value="HYPE">HYPE</option>
             <option value="GUA">GUA</option>
           </select>
+          <button id="edit-symbols" type="button">编辑币种</button>
           <div id="pair-info" class="pair-info">BTC/USDT 永续合约（币安） | 最新 --</div>
         </div>
+      </div>
+      <div id="symbol-editor" class="symbol-editor" hidden>
+        <input id="symbol-input" type="text" placeholder="输入 BTCUSDT 或 BTC" autocomplete="off" />
+        <button id="add-symbol" type="button">增加</button>
+        <div id="symbol-editor-message" class="symbol-editor-message"></div>
+        <div class="symbol-editor-tip">可添加范围：币安 U 本位永续合约交易对。输入简称会优先尝试补全为 USDT 合约。</div>
+        <div id="symbol-chip-list" class="symbol-chip-list"></div>
       </div>
       <div class="grid">
         <div class="card" data-interval="1d">
@@ -177,9 +268,16 @@
       const chartInstances = new Map();
       const symbolSelectEl = document.getElementById("symbol-select");
       const pairInfoEl = document.getElementById("pair-info");
+      const editSymbolsBtn = document.getElementById("edit-symbols");
+      const symbolEditorEl = document.getElementById("symbol-editor");
+      const symbolInputEl = document.getElementById("symbol-input");
+      const addSymbolBtn = document.getElementById("add-symbol");
+      const symbolEditorMessageEl = document.getElementById("symbol-editor-message");
+      const symbolChipListEl = document.getElementById("symbol-chip-list");
       const query = new URLSearchParams(window.location.search);
       const symbolFromQuery = query.get("symbol");
-      const symbolConfig = {
+      const SYMBOL_STORAGE_KEY = "ts12-editable-symbols-v1";
+      const DEFAULT_SYMBOL_CONFIG = {
         BTC: { exchangeSymbol: "BTCUSDT", pairName: "BTC/USDT 永续合约（币安）" },
         ETH: { exchangeSymbol: "ETHUSDT", pairName: "ETH/USDT 永续合约（币安）" },
         XAU: { exchangeSymbol: "XAUUSDT", pairName: "XAU/USDT 永续合约（币安）" },
@@ -189,7 +287,10 @@
         HYPE: { exchangeSymbol: "HYPEUSDT", pairName: "HYPE/USDT 永续合约（币安）" },
         GUA: { exchangeSymbol: "GUAUSDT", pairName: "GUA/USDT 永续合约（币安）" },
       };
-      if (symbolConfig[symbolFromQuery]) symbolSelectEl.value = symbolFromQuery;
+      let symbolPrefs = loadSymbolPrefs();
+      let symbolConfig = buildSymbolConfig();
+      let futuresSymbolMap = null;
+      renderSymbolOptions(symbolFromQuery);
       const REQUEST_TIMEOUT_MS = 8000;
       const MAX_RETRIES = 2;
       const RETRY_BASE_MS = 350;
@@ -197,6 +298,110 @@
       const KLINE_COUNT = 700;
       let isLoading = false;
       let pollTimer = null;
+
+      function loadSymbolPrefs() {
+        try {
+          const raw = localStorage.getItem(SYMBOL_STORAGE_KEY);
+          const parsed = raw ? JSON.parse(raw) : null;
+          return {
+            customSymbols: Array.isArray(parsed?.customSymbols) ? parsed.customSymbols : [],
+            hiddenDefaults: Array.isArray(parsed?.hiddenDefaults) ? parsed.hiddenDefaults : [],
+          };
+        } catch (_) {
+          return { customSymbols: [], hiddenDefaults: [] };
+        }
+      }
+      function persistSymbolPrefs() {
+        try {
+          localStorage.setItem(SYMBOL_STORAGE_KEY, JSON.stringify(symbolPrefs));
+        } catch (_) {}
+      }
+      function makeSymbolKey(exchangeSymbol) {
+        return String(exchangeSymbol).toUpperCase();
+      }
+      function formatExchangePair(exchangeSymbol) {
+        const s = String(exchangeSymbol).toUpperCase();
+        for (const quote of ["USDT", "USDC", "FDUSD", "TUSD", "BUSD"]) {
+          if (s.endsWith(quote)) return `${s.slice(0, -quote.length)}/${quote}`;
+        }
+        return s;
+      }
+      function formatSymbolDisplay(exchangeSymbol) {
+        const s = String(exchangeSymbol).toUpperCase();
+        for (const quote of ["USDT", "USDC", "FDUSD", "TUSD", "BUSD"]) {
+          if (s.endsWith(quote)) return s.slice(0, -quote.length);
+        }
+        return s;
+      }
+      function makeSymbolConfig(exchangeSymbol) {
+        const pair = formatExchangePair(exchangeSymbol);
+        return { exchangeSymbol: makeSymbolKey(exchangeSymbol), pairName: `${pair} 永续合约（币安）` };
+      }
+      function buildSymbolConfig() {
+        const hidden = new Set(symbolPrefs.hiddenDefaults || []);
+        const next = {};
+        for (const [key, cfg] of Object.entries(DEFAULT_SYMBOL_CONFIG)) {
+          if (!hidden.has(key)) next[key] = cfg;
+        }
+        const existingSymbols = new Set(Object.values(next).map((cfg) => cfg.exchangeSymbol));
+        for (const symbol of symbolPrefs.customSymbols || []) {
+          const exchangeSymbol = makeSymbolKey(symbol);
+          if (!exchangeSymbol || existingSymbols.has(exchangeSymbol)) continue;
+          next[exchangeSymbol] = makeSymbolConfig(exchangeSymbol);
+          existingSymbols.add(exchangeSymbol);
+        }
+        if (Object.keys(next).length === 0) return { BTC: DEFAULT_SYMBOL_CONFIG.BTC };
+        return next;
+      }
+      function getSymbolOptionLabel(key, cfg) {
+        const defaultBase = Object.prototype.hasOwnProperty.call(DEFAULT_SYMBOL_CONFIG, key) ? key : "";
+        return defaultBase || formatSymbolDisplay(cfg.exchangeSymbol);
+      }
+      function findSymbolKeyByExchangeSymbol(exchangeSymbol) {
+        const normalized = makeSymbolKey(exchangeSymbol);
+        return Object.entries(symbolConfig).find(([, cfg]) => cfg.exchangeSymbol === normalized)?.[0] || null;
+      }
+      function renderSymbolOptions(preferredKey) {
+        symbolConfig = buildSymbolConfig();
+        const preferred =
+          (preferredKey && symbolConfig[preferredKey] && preferredKey) ||
+          findSymbolKeyByExchangeSymbol(preferredKey) ||
+          (symbolSelectEl.value && symbolConfig[symbolSelectEl.value] && symbolSelectEl.value) ||
+          Object.keys(symbolConfig)[0];
+        symbolSelectEl.innerHTML = "";
+        for (const [key, cfg] of Object.entries(symbolConfig)) {
+          const option = document.createElement("option");
+          option.value = key;
+          option.textContent = getSymbolOptionLabel(key, cfg);
+          symbolSelectEl.appendChild(option);
+        }
+        symbolSelectEl.value = preferred;
+        renderSymbolChips();
+      }
+      function renderSymbolChips() {
+        if (!symbolChipListEl) return;
+        symbolChipListEl.innerHTML = "";
+        const count = Object.keys(symbolConfig).length;
+        for (const [key, cfg] of Object.entries(symbolConfig)) {
+          const chip = document.createElement("span");
+          chip.className = "symbol-chip";
+          const text = document.createElement("span");
+          text.textContent = getSymbolOptionLabel(key, cfg);
+          chip.appendChild(text);
+          const del = document.createElement("button");
+          del.type = "button";
+          del.textContent = "×";
+          del.title = "删除";
+          del.disabled = count <= 1;
+          del.addEventListener("click", () => removeSymbol(key));
+          chip.appendChild(del);
+          symbolChipListEl.appendChild(chip);
+        }
+      }
+      function setSymbolEditorMessage(message, isError = false) {
+        symbolEditorMessageEl.textContent = message || "";
+        symbolEditorMessageEl.classList.toggle("error", Boolean(isError));
+      }
 
       function getPriceDecimals(value) {
         const n = Math.abs(Number(value));
@@ -236,6 +441,80 @@
         } finally {
           clearTimeout(timer);
         }
+      }
+
+      async function getFuturesSymbolMap() {
+        if (futuresSymbolMap) return futuresSymbolMap;
+        const url = "https://fapi.binance.com/fapi/v1/exchangeInfo";
+        const info = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
+        const map = new Map();
+        for (const item of info?.symbols || []) {
+          if (item?.contractType !== "PERPETUAL" || item?.status !== "TRADING") continue;
+          if (!item?.symbol) continue;
+          map.set(String(item.symbol).toUpperCase(), item);
+        }
+        futuresSymbolMap = map;
+        return futuresSymbolMap;
+      }
+
+      async function resolveFuturesSymbol(input) {
+        const raw = String(input || "").trim().toUpperCase();
+        const clean = raw.replace(/[^A-Z0-9]/g, "");
+        if (!clean) throw new Error("请输入交易对");
+        const map = await getFuturesSymbolMap();
+        const candidates = [clean];
+        if (!/(USDT|USDC|FDUSD|TUSD|BUSD)$/.test(clean)) candidates.push(`${clean}USDT`);
+        for (const candidate of candidates) {
+          if (map.has(candidate)) return candidate;
+        }
+        throw new Error("未在币安 U 本位永续合约中找到该交易对");
+      }
+
+      async function addSymbolFromInput() {
+        const input = symbolInputEl.value;
+        setSymbolEditorMessage("正在校验...");
+        addSymbolBtn.disabled = true;
+        try {
+          const exchangeSymbol = await resolveFuturesSymbol(input);
+          const existingKey = findSymbolKeyByExchangeSymbol(exchangeSymbol);
+          if (existingKey) {
+            symbolSelectEl.value = existingKey;
+            setSymbolEditorMessage(`${formatSymbolDisplay(exchangeSymbol)} 已在列表中`);
+            return;
+          }
+          const defaultEntry = Object.entries(DEFAULT_SYMBOL_CONFIG).find(([, cfg]) => cfg.exchangeSymbol === exchangeSymbol);
+          if (defaultEntry) {
+            symbolPrefs.hiddenDefaults = (symbolPrefs.hiddenDefaults || []).filter((key) => key !== defaultEntry[0]);
+          } else if (!(symbolPrefs.customSymbols || []).includes(exchangeSymbol)) {
+            symbolPrefs.customSymbols = [...(symbolPrefs.customSymbols || []), exchangeSymbol];
+          }
+          persistSymbolPrefs();
+          renderSymbolOptions(defaultEntry?.[0] || exchangeSymbol);
+          symbolInputEl.value = "";
+          updatePairInfo(NaN);
+          loadAll();
+          setSymbolEditorMessage(`已增加 ${formatSymbolDisplay(exchangeSymbol)}`);
+        } catch (error) {
+          setSymbolEditorMessage(error.message || "增加失败", true);
+        } finally {
+          addSymbolBtn.disabled = false;
+        }
+      }
+
+      function removeSymbol(key) {
+        if (!symbolConfig[key] || Object.keys(symbolConfig).length <= 1) return;
+        const exchangeSymbol = symbolConfig[key].exchangeSymbol;
+        if (Object.prototype.hasOwnProperty.call(DEFAULT_SYMBOL_CONFIG, key)) {
+          symbolPrefs.hiddenDefaults = Array.from(new Set([...(symbolPrefs.hiddenDefaults || []), key]));
+        } else {
+          symbolPrefs.customSymbols = (symbolPrefs.customSymbols || []).filter((symbol) => symbol !== exchangeSymbol);
+        }
+        persistSymbolPrefs();
+        const wasActive = symbolSelectEl.value === key;
+        renderSymbolOptions(wasActive ? null : symbolSelectEl.value);
+        updatePairInfo(NaN);
+        if (wasActive) loadAll();
+        setSymbolEditorMessage(`已删除 ${formatSymbolDisplay(exchangeSymbol)}`);
       }
 
       function normalizeKlinesResponse(raw) {
@@ -559,6 +838,17 @@
       symbolSelectEl.addEventListener("change", () => {
         updatePairInfo(NaN);
         loadAll();
+      });
+      editSymbolsBtn.addEventListener("click", () => {
+        symbolEditorEl.hidden = !symbolEditorEl.hidden;
+        if (!symbolEditorEl.hidden) {
+          renderSymbolChips();
+          symbolInputEl.focus();
+        }
+      });
+      addSymbolBtn.addEventListener("click", addSymbolFromInput);
+      symbolInputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") addSymbolFromInput();
       });
       window.addEventListener("resize", () => {
         for (const chart of chartInstances.values()) chart.resize();

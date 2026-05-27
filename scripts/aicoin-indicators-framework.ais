@@ -1,0 +1,164 @@
+// 与「交易系统1.2」详情页指标对齐：放量/NPOC、Rolling、周期 VP（扩展+EMA 平滑）。
+// 官方文档索引：https://www.aicoin.com/zh-Hans/article/355796
+// @version=2
+//
+// tfPreset：0–3 手动指定 VP 分段（与 index.html：30m→周、4h→月、12h→季、1d→年）；≥4 时按相邻两根 K 线时间差自动识别周期（避免 if 内 := 改 int 不生效导致永远按周）。
+// 自定义函数命名须为 func_ 前缀整体作为函数名（如 func_ma），不能写「func 空格 函数名」。
+// VP 说明：本脚本为因果计算（仅用当前根及更早数据）；index.html 对已完结历史周期会把
+// 整段最终 POC/VAH/VAL 回填到该段每一根，二者在「历史已收盘段」可能略有差异。
+//
+// 不构成投资建议。
+
+// ========= 参数 =========
+// tfPreset：0=周 VP | 1=月 | 2=季 | 3=年；默认 4=自动（由相邻 K 间隔推断 30m/4h/12h/1d）
+int tfPreset = 4
+int volLookback = 34
+float volMult = 3.0
+float vpSmoothAlpha = 0.35
+
+// ========= 行情（官方序列）=========
+// open high low close volume time —— 见《行情数据》356114
+
+tp = hlc3
+
+// ========= UTC+0 周期键（与页面 getPeriodKey 一致）=========
+y = year(time, "UTC+0")
+m = month(time, "UTC+0")
+q0 = floor((m - 1) / 3) * 3 + 1
+wk = weekofyear(time, "UTC+0")
+
+// 相邻 K 间隔：先归一为「秒」（time 若为毫秒则 stepRaw 常 >1e5）
+stepRaw = na(ref(time, 1)) ? nan : (time - ref(time, 1))
+stepSec = na(stepRaw) ? 1800 : (iff(stepRaw > 100000, stepRaw / 1000.0, stepRaw))
+effPreset = iff(tfPreset < 4, tfPreset, iff(stepSec >= 64800, 3, iff(stepSec >= 28800, 2, iff(stepSec >= 8100, 1, 0))))
+// 注意：AiCoin 的 iff 调用勿换行拆开，否则易报 no viable alternative
+barMinutes = iff(tfPreset < 4, iff(tfPreset == 0, 30, iff(tfPreset == 1, 240, iff(tfPreset == 2, 720, 1440))), iff(stepSec >= 64800, 1440, iff(stepSec >= 28800, 720, iff(stepSec >= 8100, 240, 30))))
+pk = iff(effPreset == 0, y * 10000 + wk, iff(effPreset == 1, y * 100 + m, iff(effPreset == 2, y * 100 + q0, y)))
+
+newSeg = na(ref(pk, 1)) ? true : (pk != ref(pk, 1))
+segLen = barslast(newSeg) + 1
+
+// ========= 放量：最近至多 volLookback 根成交量算术均值（与页面一致）=========
+// AiCoin 自定义函数：函数名须为 func_xxx（见官方「数据类型及函数定义」示例 func_ma）
+func_volAvgUpto(nMax) {
+    float s = 0.0
+    int n = 0
+    for (i = 0; i < nMax; i++) {
+        if na(volume[i]) {
+            break
+        }
+        s := s + volume[i]
+        n := n + 1
+    }
+    if n == 0 {
+        return nan
+    }
+    return s / n
+}
+
+avgV = func_volAvgUpto(volLookback)
+isSpike = volume > avgV * volMult
+
+// ========= NPOC（放量根记 tp，否则沿用上一值）=========
+var float lastNpoc = nan
+lastNpoc := isSpike ? tp : nz(lastNpoc[1], nan)
+
+// ========= VP：本周期内 0..segLen-1 扩展窗口 + σ 带 ==========
+func_vpPoc(lenBars) {
+    float sumV = 0.0
+    float wtp = 0.0
+    L = lenBars
+    if L > 500 {
+        L = 500
+    }
+    if L < 1 {
+        return nan
+    }
+    for (j = 0; j < L; j++) {
+        if na(volume[j]) {
+            return nan
+        }
+        if na(tp[j]) {
+            return nan
+        }
+        sumV := sumV + volume[j]
+        wtp := wtp + tp[j] * volume[j]
+    }
+    if sumV <= 0 {
+        return nan
+    }
+    return wtp / sumV
+}
+
+func_vpSigma(lenBars, poc0) {
+    float sumV = 0.0
+    float varw = 0.0
+    L = lenBars
+    if L > 500 {
+        L = 500
+    }
+    if L < 1 {
+        return nan
+    }
+    for (j = 0; j < L; j++) {
+        if na(volume[j]) {
+            return nan
+        }
+        sumV := sumV + volume[j]
+        d = tp[j] - poc0
+        varw := varw + d * d * volume[j]
+    }
+    if sumV <= 0 {
+        return nan
+    }
+    return sqrt(max(varw / sumV, 0.0))
+}
+
+rawPoc = func_vpPoc(round(segLen))
+rawSig = func_vpSigma(round(segLen), rawPoc)
+rawVah = rawPoc + rawSig
+rawVal = rawPoc - rawSig
+
+// ========= 当期 EMA 平滑（alpha=0.35）=========
+var float smPoc = nan
+var float smVah = nan
+var float smVal = nan
+if newSeg {
+    smPoc := rawPoc
+    smVah := rawVah
+    smVal := rawVal
+} else {
+    smPoc := vpSmoothAlpha * rawPoc + (1.0 - vpSmoothAlpha) * smPoc[1]
+    smVah := vpSmoothAlpha * rawVah + (1.0 - vpSmoothAlpha) * smVah[1]
+    smVal := vpSmoothAlpha * rawVal + (1.0 - vpSmoothAlpha) * smVal[1]
+}
+
+// ========= Rolling 收盘均线（日历日 → 根数，与页面 barsForCalendarDays 一致）=========
+w7 = ceil(7 * 24 * 60 / barMinutes)
+w90 = ceil(90 * 24 * 60 / barMinutes)
+w365 = ceil(365 * 24 * 60 / barMinutes)
+
+roll7 = ma(close, w7)
+roll90 = ma(close, w90)
+roll365 = ma(close, w365)
+// 与 index.html 一致：仅 30m 画 7d；仅 1d（年 VP）画 90d/365d；4h/12h 不画 Rolling
+roll7p = effPreset == 0 ? roll7 : nan
+roll90p = effPreset == 3 ? roll90 : nan
+roll365p = effPreset == 3 ? roll365 : nan
+
+// ========= 画图（官方 plot / fill / plotShape / plotText）356120 ==========
+plot(smVah, title = "VP VAH", color = "rgba(139,165,255,0.95)", lineWidth = 1)
+plot(smPoc, title = "VP POC", color = "rgba(76,114,255,1)", lineWidth = 2)
+plot(smVal, title = "VP VAL", color = "rgba(139,165,255,0.95)", lineWidth = 1)
+fill(smVah, smVal, color = "rgba(139,165,255,0.12)")
+
+plot(roll7p, title = "Rolling 7d close", color = "rgba(94,234,212,0.9)", lineWidth = 1)
+plot(roll90p, title = "Rolling 90d close", color = "rgba(232,184,106,0.9)", lineWidth = 1)
+plot(roll365p, title = "Rolling 365d close", color = "rgba(167,139,250,0.9)", lineWidth = 1)
+
+plotShape(isSpike, title = "放量", refSeries = close, shape = "triangleUp", color = "rgba(246,196,83,0.95)", fill = true, placement = "bottom")
+
+plotText(isSpike, title = "放量提示", text = "量", refSeries = lastNpoc, color = "rgba(246,196,83,1)", fontSize = 10, placement = "top")
+
+// ========= 预警 =========
+alertcondition(isSpike, title = "副图放量(34均量×3)", direction = "neutral")

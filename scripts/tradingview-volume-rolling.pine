@@ -1,0 +1,44 @@
+// @version=5
+// 与「交易系统1.2」中 **副图放量 + NPOC**、**Rolling 收盘均线根数** 一致（可在 TradingView 粘贴运行）。
+// 成交量加权 VP（周/月/季/年 + 当期平滑 + 上周期延长）逻辑较复杂，完整 1:1 请用仓库内 Node 脚本：scripts/binance-indicators.mjs
+indicator("永续框架（量+NPOC+Rolling）", overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+volLookback = 34
+volMult = 3.0
+
+// 与 index.html 一致：第 i 根用最近至多 34 根（含当前）的算术均量
+avgVol() =>
+    float s = 0.0
+    int n = math.min(volLookback, bar_index + 1)
+    for j = 0 to n - 1
+        s += volume[j]
+    s / n
+
+isSpike = volume > avgVol() * volMult
+typ = (high + low + close) / 3.0
+var float lastNpoc = na
+lastNpoc := isSpike ? typ : nz(lastNpoc[1])
+
+tfSec = timeframe.in_seconds()
+barsForDays(days) =>
+    math.max(1, math.ceil(days * 24.0 * 3600.0 / tfSec))
+
+w7 = barsForDays(7)
+w90 = barsForDays(90)
+w365 = barsForDays(365)
+
+roll7 = ta.sma(close, w7)
+roll90 = ta.sma(close, w90)
+roll365 = ta.sma(close, w365)
+
+show7 = timeframe.in_seconds() == 30 * 60
+show90365 = timeframe.in_seconds() == 86400
+
+plot(show7 ? roll7 : na, "Rolling 7d close", color = color.new(color.teal, 0), linewidth = 2)
+plot(show90365 ? roll90 : na, "Rolling 90d close", color = color.new(color.orange, 0), linewidth = 2)
+plot(show90365 ? roll365 : na, "Rolling 365d close", color = color.new(color.purple, 0), linewidth = 2)
+
+plotshape(isSpike, title = "放量", style = shape.triangleup, location = location.belowbar, color = color.new(color.orange, 0), size = size.tiny)
+plot(lastNpoc, "NPOC(填充)", color = color.new(color.yellow, 30), linewidth = 1, style = plot.style_linebr)
+
+alertcondition(isSpike, "副图放量(34均量×3)", alert.freq_once_per_bar_close)

@@ -25,6 +25,9 @@
         display: flex;
         flex-direction: column;
         gap: 10px;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
       }
       .header {
         display: flex;
@@ -33,9 +36,24 @@
       }
       .symbol-bar {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 10px;
+        gap: 8px 10px;
         font-size: 14px;
+        width: 100%;
+      }
+      .symbol-group-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+        width: 100%;
+      }
+      .symbol-group-row-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #9eb0d8;
+        flex-shrink: 0;
       }
       .symbol-bar select {
         background: #162035;
@@ -57,6 +75,26 @@
         cursor: pointer;
       }
       .symbol-bar button:hover {
+        background: #1d2a45;
+      }
+      .user-session {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #9eb0d8;
+      }
+      .user-session button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .user-session button:hover {
         background: #1d2a45;
       }
       .symbol-editor {
@@ -125,12 +163,19 @@
         line-height: 18px;
         color: #ffb3c8;
       }
+      .charts-panel {
+        flex: 1 1 0;
+        min-height: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
       .grid {
         flex: 1 1 auto;
         min-height: 0;
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-rows: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(2, minmax(220px, 1fr));
         gap: 10px;
       }
       .card {
@@ -159,10 +204,348 @@
       }
       .chart {
         flex: 1 1 auto;
-        min-height: 0;
+        min-height: 140px;
       }
       .error {
         color: #ff9090;
+      }
+
+      .break-filter {
+        border: 1px solid #2d3b59;
+        border-radius: 10px;
+        background: #0d1527;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex: 0 1 auto;
+        max-height: min(32vh, 300px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .break-filter-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+      }
+      .break-filter-title {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .break-filter-hint {
+        flex: 1 1 200px;
+        color: #7f92bd;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .break-filter-head button {
+        background: #243a6e;
+        color: #dbe6ff;
+        border: 1px solid #4c72ff;
+        border-radius: 8px;
+        padding: 6px 14px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .break-filter-head button:hover:not(:disabled) {
+        background: #2d4a8a;
+      }
+      .break-filter-head button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .break-filter-head button.break-scan-clear-btn {
+        background: #162035;
+        border-color: #2d3b59;
+        color: #9eb0d8;
+      }
+      .break-filter-head button.break-scan-clear-btn:hover:not(:disabled) {
+        background: #1d2a45;
+        border-color: #5f739e;
+        color: #dbe6ff;
+      }
+      .break-scan-status {
+        font-size: 12px;
+        color: #9eb0d8;
+      }
+      .break-scan-status.error {
+        color: #ff9090;
+      }
+      .break-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .break-dim {
+        border: 1px solid #1f2f4e;
+        border-radius: 8px;
+        padding: 6px 8px;
+        background: #111b2f;
+      }
+      .break-dim-label {
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: #c5d4f5;
+      }
+      .break-dim-options {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+      }
+      .break-dim label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: #9eb0d8;
+        cursor: pointer;
+        margin: 0;
+        white-space: nowrap;
+      }
+      .break-dim label input {
+        accent-color: #4c72ff;
+      }
+      .break-filter-results {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-content: flex-start;
+        align-items: flex-start;
+        flex: 1 1 auto;
+        min-height: 48px;
+        max-height: 168px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 2px 0;
+      }
+      .break-filter-results.empty::before {
+        content: "勾选条件后点击「扫描」；结果保留至点击「清除结果」";
+        color: #5f739e;
+        font-size: 12px;
+      }
+      .break-result-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid #2d3b59;
+        background: #162035;
+        color: #dbe6ff;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .break-result-chip:hover {
+        border-color: #4c72ff;
+        background: #1d2a45;
+      }
+      .break-result-chip.active {
+        border-color: #4c72ff;
+        background: #243a6e;
+      }
+      .break-result-tags {
+        display: inline-flex;
+        gap: 3px;
+      }
+      .break-tag {
+        font-size: 10px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+      .break-tag.up {
+        color: #5eead4;
+        background: rgba(94, 234, 212, 0.15);
+      }
+      .break-tag.down {
+        color: #ff9ebb;
+        background: rgba(255, 93, 152, 0.15);
+      }
+      .symbol-group-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .symbol-group-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid #2d3b59;
+        background: #162035;
+        color: #9eb0d8;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .symbol-group-chip:hover {
+        border-color: #4c72ff;
+        color: #dbe6ff;
+      }
+      .symbol-group-chip.active {
+        border-color: #4c72ff;
+        background: #243a6e;
+        color: #dbe6ff;
+      }
+      .symbol-group-chip.all-chip.active {
+        background: #1d2a45;
+      }
+      .symbol-group-chip .count {
+        opacity: 0.75;
+        font-size: 10px;
+      }
+      .symbol-group-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      .symbol-group-actions button {
+        background: #162035;
+        color: #9eb0d8;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .symbol-group-actions button:hover {
+        background: #1d2a45;
+        color: #dbe6ff;
+      }
+      .symbol-group-manager {
+        border: 1px solid #1f2f4e;
+        border-radius: 8px;
+        background: #111b2f;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .symbol-group-manager[hidden] {
+        display: none !important;
+      }
+      .symbol-group-manager-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .symbol-group-manager-head input {
+        flex: 1 1 120px;
+        min-width: 100px;
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .symbol-group-manager-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .symbol-group-item {
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px;
+        background: #0d1527;
+      }
+      .symbol-group-item-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .symbol-group-item-head input {
+        flex: 1 1 auto;
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .symbol-group-item-head button {
+        background: transparent;
+        border: 1px solid #2d3b59;
+        color: #ffb3c8;
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .symbol-group-item-symbols {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-height: 22px;
+      }
+      .symbol-group-symbol-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #162035;
+        border: 1px solid #2d3b59;
+        font-size: 11px;
+        color: #dbe6ff;
+      }
+      .symbol-group-symbol-chip button {
+        border: none;
+        background: transparent;
+        color: #ffb3c8;
+        cursor: pointer;
+        padding: 0 2px;
+        line-height: 1;
+      }
+      .symbol-group-add-symbol {
+        display: flex;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .symbol-group-add-symbol input {
+        flex: 1 1 auto;
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 11px;
+      }
+      .symbol-group-add-symbol button {
+        background: #162035;
+        color: #9eb0d8;
+        border: 1px solid #2d3b59;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .symbol-chip .chip-to-group {
+        padding: 0 5px;
+        border: none;
+        background: rgba(76, 114, 255, 0.2);
+        color: #8ba5ff;
+        border-radius: 4px;
+        font-size: 10px;
+        cursor: pointer;
+        line-height: 18px;
+      }
+      .symbol-chip .chip-to-group:hover {
+        background: rgba(76, 114, 255, 0.35);
       }
 
       /* 手机浏览器窄屏（含 iPhone 13 Pro）：仅在此范围生效 */
@@ -194,9 +577,24 @@
         .symbol-editor-message {
           line-height: 1.4;
         }
+        .charts-panel {
+          min-height: 52vh;
+        }
         .grid {
           gap: 8px;
-          grid-template-rows: repeat(2, minmax(140px, 1fr));
+          grid-template-rows: repeat(2, minmax(120px, 1fr));
+        }
+        .break-filter {
+          max-height: 34vh;
+        }
+        .break-filter-results {
+          max-height: 120px;
+        }
+        .break-dim-options {
+          gap: 6px 8px;
+        }
+        .chart {
+          min-height: 100px;
         }
         .card-head {
           padding: 6px 8px;
@@ -207,6 +605,12 @@
         }
         .chart {
           min-height: 0;
+        }
+        .break-filter-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .break-filter-hint {
+          flex: 1 1 100%;
         }
       }
     </style>
@@ -228,6 +632,25 @@
           </select>
           <button id="edit-symbols" type="button">编辑币种</button>
           <div id="pair-info" class="pair-info">BTC/USDT 永续合约（币安） | 最新 --</div>
+          <div class="user-session">
+            <span id="user-display"></span>
+            <button type="button" id="logout-btn">退出登录</button>
+          </div>
+          <div class="symbol-group-row">
+            <span class="symbol-group-row-label">分组：</span>
+            <div class="symbol-group-chips" id="symbol-group-chips"></div>
+            <div class="symbol-group-actions">
+              <button type="button" id="symbol-group-new-btn">+ 新建分组</button>
+              <button type="button" id="symbol-group-manage-btn">管理分组</button>
+            </div>
+          </div>
+          <div id="symbol-group-manager" class="symbol-group-manager" hidden>
+            <div class="symbol-group-manager-head">
+              <input id="symbol-group-new-name" type="text" placeholder="新分组名称" autocomplete="off" />
+              <button type="button" id="symbol-group-create-btn">创建</button>
+            </div>
+            <div id="symbol-group-manager-list" class="symbol-group-manager-list"></div>
+          </div>
         </div>
       </div>
       <div id="symbol-editor" class="symbol-editor" hidden>
@@ -237,6 +660,18 @@
         <div class="symbol-editor-tip">可添加范围：币安 U 本位永续合约交易对。输入简称会优先尝试补全为 USDT 合约。</div>
         <div id="symbol-chip-list" class="symbol-chip-list"></div>
       </div>
+      <div class="break-filter" id="break-filter">
+        <div class="break-filter-head">
+          <span class="break-filter-title">突破筛选</span>
+          <span class="break-filter-hint">扫描范围：币安 U 本位 USDT 永续全部交易对。结果将保留至点击「清除结果」；刷新页面也会恢复上次扫描。</span>
+          <button id="break-scan-btn" type="button">扫描</button>
+          <button id="break-scan-clear-btn" type="button" class="break-scan-clear-btn" disabled>清除结果</button>
+          <span id="break-scan-status" class="break-scan-status"></span>
+        </div>
+        <div class="break-filter-grid" id="break-filter-grid"></div>
+        <div id="break-filter-results" class="break-filter-results empty"></div>
+      </div>
+      <div class="charts-panel">
       <div class="grid">
         <div class="card" data-interval="1d">
           <div class="card-head"><span class="card-title">年维度</span><span class="card-meta" data-meta="1d"></span></div>
@@ -255,17 +690,62 @@
           <div class="chart" id="chart-week"></div>
         </div>
       </div>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="scripts/ts12-api-config.js"></script>
+    <script src="scripts/ts12-api-client.js"></script>
+    <script src="scripts/ts12-auth.js"></script>
+    <script src="scripts/ts12-symbol-prefs.js"></script>
     <script>
+      const authSession = Ts12Auth.requireLogin();
+      const currentUserId = authSession.userId;
       const chartDefs = [
         { id: "chart-year", interval: "1d" },
         { id: "chart-quarter", interval: "12h" },
         { id: "chart-month", interval: "4h" },
         { id: "chart-week", interval: "30m" },
       ];
+      const BREAK_DIMENSIONS = [
+        { key: "year", label: "年维度", interval: "1d", short: "年" },
+        { key: "quarter", label: "季度维度", interval: "12h", short: "季" },
+        { key: "month", label: "月维度", interval: "4h", short: "月" },
+        { key: "week", label: "周维度", interval: "30m", short: "周" },
+      ];
+      /** 突破扫描 K 线根数：与详情页 KLINE_COUNT 一致，避免与图表 VP 不一致 */
+      const SCAN_KLINE_BY_INTERVAL = {
+        "30m": 700,
+        "4h": 700,
+        "12h": 700,
+        "1d": 700,
+      };
+      const SCAN_CONCURRENCY = 2;
+      const SCAN_KLINE_MAX_INFLIGHT = 4;
+      const SCAN_KLINE_RETRIES = 4;
+      const SCAN_SYMBOL_GAP_MS = 120;
+      let scanKlineInflight = 0;
+      const scanKlineWaitQueue = [];
       const chartInstances = new Map();
+      const breakFilterGridEl = document.getElementById("break-filter-grid");
+      const breakScanBtnEl = document.getElementById("break-scan-btn");
+      const breakScanClearBtnEl = document.getElementById("break-scan-clear-btn");
+      const breakScanStatusEl = document.getElementById("break-scan-status");
+      const breakFilterResultsEl = document.getElementById("break-filter-results");
+      const breakFilterEl = document.getElementById("break-filter");
+      const symbolGroupChipsEl = document.getElementById("symbol-group-chips");
+      const symbolGroupManagerEl = document.getElementById("symbol-group-manager");
+      const symbolGroupManagerListEl = document.getElementById("symbol-group-manager-list");
+      const symbolGroupNewNameEl = document.getElementById("symbol-group-new-name");
+      const symbolGroupNewBtnEl = document.getElementById("symbol-group-new-btn");
+      const symbolGroupManageBtnEl = document.getElementById("symbol-group-manage-btn");
+      const symbolGroupCreateBtnEl = document.getElementById("symbol-group-create-btn");
+      const userDisplayEl = document.getElementById("user-display");
+      const logoutBtnEl = document.getElementById("logout-btn");
+      let breakScanCache = null;
+      let breakScanRunning = false;
+      /** 扫描结果单击预览（未加入币种列表时） */
+      let breakScanPreviewExchangeSymbol = null;
       const symbolSelectEl = document.getElementById("symbol-select");
       const pairInfoEl = document.getElementById("pair-info");
       const editSymbolsBtn = document.getElementById("edit-symbols");
@@ -276,7 +756,9 @@
       const symbolChipListEl = document.getElementById("symbol-chip-list");
       const query = new URLSearchParams(window.location.search);
       const symbolFromQuery = query.get("symbol");
-      const SYMBOL_STORAGE_KEY = "ts12-editable-symbols-v1";
+      function getBreakScanStorageKey() {
+        return Ts12SymbolPrefs.breakScanStorageKey(currentUserId);
+      }
       const DEFAULT_SYMBOL_CONFIG = {
         BTC: { exchangeSymbol: "BTCUSDT", pairName: "BTC/USDT 永续合约（币安）" },
         ETH: { exchangeSymbol: "ETHUSDT", pairName: "ETH/USDT 永续合约（币安）" },
@@ -287,10 +769,22 @@
         HYPE: { exchangeSymbol: "HYPEUSDT", pairName: "HYPE/USDT 永续合约（币安）" },
         GUA: { exchangeSymbol: "GUAUSDT", pairName: "GUA/USDT 永续合约（币安）" },
       };
-      let symbolPrefs = loadSymbolPrefs();
-      let symbolConfig = buildSymbolConfig();
+      let symbolPrefs = {
+        customSymbols: [],
+        hiddenDefaults: [],
+        symbolGroups: [],
+        activeSymbolGroupId: null,
+      };
+      let breakScanSaveTimer = null;
+      let symbolConfig = {};
       let futuresSymbolMap = null;
-      renderSymbolOptions(symbolFromQuery);
+      if (userDisplayEl) {
+        userDisplayEl.textContent = authSession.displayName || authSession.username;
+      }
+      logoutBtnEl?.addEventListener("click", () => {
+        Ts12Auth.logout();
+        window.location.href = "login.html";
+      });
       const REQUEST_TIMEOUT_MS = 8000;
       const MAX_RETRIES = 2;
       const RETRY_BASE_MS = 350;
@@ -299,59 +793,331 @@
       let isLoading = false;
       let pollTimer = null;
 
-      function loadSymbolPrefs() {
-        try {
-          const raw = localStorage.getItem(SYMBOL_STORAGE_KEY);
-          const parsed = raw ? JSON.parse(raw) : null;
-          return {
-            customSymbols: Array.isArray(parsed?.customSymbols) ? parsed.customSymbols : [],
-            hiddenDefaults: Array.isArray(parsed?.hiddenDefaults) ? parsed.hiddenDefaults : [],
-          };
-        } catch (_) {
-          return { customSymbols: [], hiddenDefaults: [] };
+      const INTERVAL_MINUTES = {
+        "30m": 30,
+        "4h": 240,
+        "12h": 720,
+        "1d": 1440,
+      };
+
+      function barsForCalendarDays(interval, days) {
+        const m = INTERVAL_MINUTES[interval];
+        if (!m) return Math.max(1, days);
+        return Math.max(1, Math.ceil((days * 24 * 60) / m));
+      }
+
+      function calcRollingSmaClose(raw, window) {
+        const n = raw.length;
+        const out = new Array(n).fill(null);
+        if (window <= 0 || n < window) return out;
+        let sum = 0;
+        for (let i = 0; i < window; i += 1) sum += Number(raw[i][4]);
+        out[window - 1] = sum / window;
+        for (let i = window; i < n; i += 1) {
+          sum += Number(raw[i][4]);
+          sum -= Number(raw[i - window][4]);
+          out[i] = sum / window;
         }
+        return out;
+      }
+
+      function createSymbolGroupId() {
+        return `grp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      }
+
+      function getSymbolGroups() {
+        return symbolPrefs.symbolGroups || [];
+      }
+
+      function setSymbolGroups(groups) {
+        symbolPrefs.symbolGroups = groups;
+      }
+
+      function getActiveSymbolGroupId() {
+        return symbolPrefs.activeSymbolGroupId;
+      }
+
+      function setActiveSymbolGroupId(id) {
+        symbolPrefs.activeSymbolGroupId = id;
+      }
+
+      function createSymbolGroup(name) {
+        const trimmed = String(name || "").trim();
+        if (!trimmed) return null;
+        const group = { id: createSymbolGroupId(), name: trimmed, symbols: [] };
+        setSymbolGroups([...getSymbolGroups(), group]);
+        persistSymbolPrefs();
+        return group;
+      }
+
+      function renameSymbolGroup(groupId, name) {
+        const trimmed = String(name || "").trim();
+        if (!trimmed) return;
+        setSymbolGroups(getSymbolGroups().map((g) => (g.id === groupId ? { ...g, name: trimmed } : g)));
+        persistSymbolPrefs();
+      }
+
+      function deleteSymbolGroup(groupId) {
+        setSymbolGroups(getSymbolGroups().filter((g) => g.id !== groupId));
+        if (getActiveSymbolGroupId() === groupId) setActiveSymbolGroupId(null);
+        persistSymbolPrefs();
+      }
+
+      function addSymbolToGroup(groupId, exchangeSymbol) {
+        const ex = makeSymbolKey(exchangeSymbol);
+        if (!ex) return;
+        setSymbolGroups(
+          getSymbolGroups().map((g) => {
+            if (g.id !== groupId) return g;
+            if (g.symbols.includes(ex)) return g;
+            return { ...g, symbols: [...g.symbols, ex] };
+          })
+        );
+        persistSymbolPrefs();
+      }
+
+      function removeSymbolFromGroup(groupId, exchangeSymbol) {
+        const ex = makeSymbolKey(exchangeSymbol);
+        setSymbolGroups(
+          getSymbolGroups().map((g) =>
+            g.id === groupId ? { ...g, symbols: g.symbols.filter((s) => s !== ex) } : g
+          )
+        );
+        persistSymbolPrefs();
+      }
+
+      function isAllSymbolGroupsFilterActive() {
+        return !getActiveSymbolGroupId();
+      }
+
+      function getActiveSymbolGroup() {
+        const id = getActiveSymbolGroupId();
+        if (!id) return null;
+        const group = getSymbolGroups().find((g) => g.id === id) || null;
+        if (!group) {
+          setActiveSymbolGroupId(null);
+          persistSymbolPrefs();
+          return null;
+        }
+        return group;
+      }
+
+      function symbolEntryMatchesGroupFilter(_key, cfg) {
+        const group = getActiveSymbolGroup();
+        if (!group) return true;
+        return group.symbols.includes(cfg.exchangeSymbol);
+      }
+
+      function getFilteredSymbolEntries() {
+        return Object.entries(symbolConfig).filter(([key, cfg]) => symbolEntryMatchesGroupFilter(key, cfg));
+      }
+
+      function refreshSymbolSelectAfterGroupChange(preferredKey) {
+        const prev = symbolSelectEl.value;
+        const changed = renderSymbolOptions(preferredKey);
+        if (changed || symbolSelectEl.value !== prev) {
+          updatePairInfo(NaN);
+          loadAll();
+        }
+      }
+
+      function toggleSymbolGroupFilter(groupId) {
+        if (groupId === "__all__") {
+          setActiveSymbolGroupId(null);
+        } else if (getActiveSymbolGroupId() === groupId) {
+          setActiveSymbolGroupId(null);
+        } else {
+          setActiveSymbolGroupId(groupId);
+        }
+        persistSymbolPrefs();
+        renderSymbolGroupBar();
+        refreshSymbolSelectAfterGroupChange(symbolSelectEl.value);
+      }
+
+      function renderSymbolGroupBar() {
+        if (!symbolGroupChipsEl) return;
+        symbolGroupChipsEl.innerHTML = "";
+        const groups = getSymbolGroups();
+        const allBtn = document.createElement("button");
+        allBtn.type = "button";
+        allBtn.className = "symbol-group-chip all-chip" + (isAllSymbolGroupsFilterActive() ? " active" : "");
+        allBtn.textContent = "全部";
+        allBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          toggleSymbolGroupFilter("__all__");
+        });
+        symbolGroupChipsEl.appendChild(allBtn);
+        for (const g of groups) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const active = getActiveSymbolGroupId() === g.id;
+          btn.className = "symbol-group-chip" + (active ? " active" : "");
+          btn.innerHTML = `${g.name}<span class="count">(${g.symbols.length})</span>`;
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleSymbolGroupFilter(g.id);
+          });
+          symbolGroupChipsEl.appendChild(btn);
+        }
+      }
+
+      function renderSymbolGroupManager() {
+        if (!symbolGroupManagerListEl) return;
+        symbolGroupManagerListEl.innerHTML = "";
+        const groups = getSymbolGroups();
+        if (!groups.length) {
+          const empty = document.createElement("div");
+          empty.style.cssText = "color:#5f739e;font-size:12px;";
+          empty.textContent = "暂无分组，输入名称后点「创建」";
+          symbolGroupManagerListEl.appendChild(empty);
+          return;
+        }
+        for (const g of groups) {
+          const item = document.createElement("div");
+          item.className = "symbol-group-item";
+          const head = document.createElement("div");
+          head.className = "symbol-group-item-head";
+          const nameInput = document.createElement("input");
+          nameInput.type = "text";
+          nameInput.value = g.name;
+          nameInput.addEventListener("change", () => renameSymbolGroup(g.id, nameInput.value));
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.textContent = "删除分组";
+          delBtn.addEventListener("click", () => {
+            if (!confirm(`删除分组「${g.name}」？`)) return;
+            deleteSymbolGroup(g.id);
+            renderSymbolGroupBar();
+            renderSymbolGroupManager();
+            refreshSymbolSelectAfterGroupChange(null);
+          });
+          head.appendChild(nameInput);
+          head.appendChild(delBtn);
+          item.appendChild(head);
+          const symWrap = document.createElement("div");
+          symWrap.className = "symbol-group-item-symbols";
+          if (!g.symbols.length) {
+            const none = document.createElement("span");
+            none.style.cssText = "color:#5f739e;font-size:11px;";
+            none.textContent = "暂无币种";
+            symWrap.appendChild(none);
+          }
+          for (const ex of g.symbols) {
+            const sc = document.createElement("span");
+            sc.className = "symbol-group-symbol-chip";
+            sc.innerHTML = `<span>${formatSymbolDisplay(ex)}</span>`;
+            const rm = document.createElement("button");
+            rm.type = "button";
+            rm.textContent = "×";
+            rm.addEventListener("click", () => {
+              removeSymbolFromGroup(g.id, ex);
+              renderSymbolGroupBar();
+              renderSymbolGroupManager();
+              refreshSymbolSelectAfterGroupChange(symbolSelectEl.value);
+            });
+            sc.appendChild(rm);
+            symWrap.appendChild(sc);
+          }
+          item.appendChild(symWrap);
+          const addRow = document.createElement("div");
+          addRow.className = "symbol-group-add-symbol";
+          const addInput = document.createElement("input");
+          addInput.type = "text";
+          addInput.placeholder = "添加 BTC 或 BTCUSDT";
+          const addBtn = document.createElement("button");
+          addBtn.type = "button";
+          addBtn.textContent = "添加";
+          addBtn.addEventListener("click", async () => {
+            try {
+              const ex = await resolveFuturesSymbol(addInput.value);
+              addSymbolToGroup(g.id, ex);
+              addInput.value = "";
+              renderSymbolGroupBar();
+              renderSymbolGroupManager();
+              refreshSymbolSelectAfterGroupChange(symbolSelectEl.value);
+            } catch (err) {
+              alert(err.message || "添加失败");
+            }
+          });
+          addInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") addBtn.click();
+          });
+          addRow.appendChild(addInput);
+          addRow.appendChild(addBtn);
+          item.appendChild(addRow);
+          symbolGroupManagerListEl.appendChild(item);
+        }
+      }
+
+      function showAssignSymbolToGroupMenu(exchangeSymbol, anchorEl) {
+        const groups = getSymbolGroups();
+        if (!groups.length) {
+          const name = prompt("尚无分组，请输入新分组名称：");
+          if (!name?.trim()) return;
+          const g = createSymbolGroup(name.trim());
+          if (g) {
+            addSymbolToGroup(g.id, exchangeSymbol);
+            renderSymbolGroupBar();
+            renderSymbolGroupManager();
+            refreshSymbolSelectAfterGroupChange(symbolSelectEl.value);
+          }
+          return;
+        }
+        const menu = document.createElement("div");
+        menu.style.cssText =
+          "position:fixed;z-index:9999;background:#0d1527;border:1px solid #2d3b59;border-radius:8px;padding:6px;min-width:140px;box-shadow:0 8px 24px rgba(0,0,0,0.45);";
+        const label = document.createElement("div");
+        label.style.cssText = "font-size:11px;color:#7f92bd;padding:4px 8px;";
+        label.textContent = "加入分组";
+        menu.appendChild(label);
+        for (const g of groups) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.style.cssText =
+            "display:block;width:100%;text-align:left;background:transparent;border:none;color:#dbe6ff;padding:6px 8px;font-size:12px;cursor:pointer;border-radius:4px;";
+          btn.textContent = g.symbols.includes(makeSymbolKey(exchangeSymbol)) ? `✓ ${g.name}` : g.name;
+          btn.addEventListener("mouseenter", () => {
+            btn.style.background = "#1d2a45";
+          });
+          btn.addEventListener("mouseleave", () => {
+            btn.style.background = "transparent";
+          });
+          btn.addEventListener("click", () => {
+            const ex = makeSymbolKey(exchangeSymbol);
+            if (g.symbols.includes(ex)) removeSymbolFromGroup(g.id, ex);
+            else addSymbolToGroup(g.id, ex);
+            document.body.removeChild(menu);
+            renderSymbolGroupBar();
+            renderSymbolGroupManager();
+            refreshSymbolSelectAfterGroupChange(symbolSelectEl.value);
+          });
+          menu.appendChild(btn);
+        }
+        const rect = anchorEl.getBoundingClientRect();
+        menu.style.left = `${Math.min(rect.left, window.innerWidth - 160)}px`;
+        menu.style.top = `${rect.bottom + 4}px`;
+        document.body.appendChild(menu);
+        const close = (e) => {
+          if (!menu.contains(e.target)) {
+            document.body.removeChild(menu);
+            document.removeEventListener("click", close, true);
+          }
+        };
+        setTimeout(() => document.addEventListener("click", close, true), 0);
       }
       function persistSymbolPrefs() {
-        try {
-          localStorage.setItem(SYMBOL_STORAGE_KEY, JSON.stringify(symbolPrefs));
-        } catch (_) {}
+        Ts12SymbolPrefs.save(symbolPrefs, currentUserId);
+        Ts12SymbolPrefs.saveAsync(symbolPrefs, currentUserId);
       }
-      function makeSymbolKey(exchangeSymbol) {
-        return String(exchangeSymbol).toUpperCase();
-      }
-      function formatExchangePair(exchangeSymbol) {
-        const s = String(exchangeSymbol).toUpperCase();
-        for (const quote of ["USDT", "USDC", "FDUSD", "TUSD", "BUSD"]) {
-          if (s.endsWith(quote)) return `${s.slice(0, -quote.length)}/${quote}`;
-        }
-        return s;
-      }
-      function formatSymbolDisplay(exchangeSymbol) {
-        const s = String(exchangeSymbol).toUpperCase();
-        for (const quote of ["USDT", "USDC", "FDUSD", "TUSD", "BUSD"]) {
-          if (s.endsWith(quote)) return s.slice(0, -quote.length);
-        }
-        return s;
-      }
+      const makeSymbolKey = Ts12SymbolPrefs.makeSymbolKey;
+      const formatExchangePair = Ts12SymbolPrefs.formatExchangePair;
+      const formatSymbolDisplay = Ts12SymbolPrefs.formatSymbolDisplay;
       function makeSymbolConfig(exchangeSymbol) {
         const pair = formatExchangePair(exchangeSymbol);
         return { exchangeSymbol: makeSymbolKey(exchangeSymbol), pairName: `${pair} 永续合约（币安）` };
       }
       function buildSymbolConfig() {
-        const hidden = new Set(symbolPrefs.hiddenDefaults || []);
-        const next = {};
-        for (const [key, cfg] of Object.entries(DEFAULT_SYMBOL_CONFIG)) {
-          if (!hidden.has(key)) next[key] = cfg;
-        }
-        const existingSymbols = new Set(Object.values(next).map((cfg) => cfg.exchangeSymbol));
-        for (const symbol of symbolPrefs.customSymbols || []) {
-          const exchangeSymbol = makeSymbolKey(symbol);
-          if (!exchangeSymbol || existingSymbols.has(exchangeSymbol)) continue;
-          next[exchangeSymbol] = makeSymbolConfig(exchangeSymbol);
-          existingSymbols.add(exchangeSymbol);
-        }
-        if (Object.keys(next).length === 0) return { BTC: DEFAULT_SYMBOL_CONFIG.BTC };
-        return next;
+        return Ts12SymbolPrefs.buildSymbolConfig(DEFAULT_SYMBOL_CONFIG, symbolPrefs);
       }
       function getSymbolOptionLabel(key, cfg) {
         const defaultBase = Object.prototype.hasOwnProperty.call(DEFAULT_SYMBOL_CONFIG, key) ? key : "";
@@ -362,21 +1128,36 @@
         return Object.entries(symbolConfig).find(([, cfg]) => cfg.exchangeSymbol === normalized)?.[0] || null;
       }
       function renderSymbolOptions(preferredKey) {
+        const prev = symbolSelectEl.value;
         symbolConfig = buildSymbolConfig();
-        const preferred =
-          (preferredKey && symbolConfig[preferredKey] && preferredKey) ||
-          findSymbolKeyByExchangeSymbol(preferredKey) ||
-          (symbolSelectEl.value && symbolConfig[symbolSelectEl.value] && symbolSelectEl.value) ||
-          Object.keys(symbolConfig)[0];
+        const entries = getFilteredSymbolEntries();
+        const filteredKeys = new Set(entries.map(([key]) => key));
         symbolSelectEl.innerHTML = "";
-        for (const [key, cfg] of Object.entries(symbolConfig)) {
+        if (!entries.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = getActiveSymbolGroup() ? "（该分组暂无币种）" : "（暂无币种）";
+          symbolSelectEl.appendChild(option);
+          symbolSelectEl.disabled = true;
+          renderSymbolChips();
+          return prev !== "";
+        }
+        symbolSelectEl.disabled = false;
+        for (const [key, cfg] of entries) {
           const option = document.createElement("option");
           option.value = key;
           option.textContent = getSymbolOptionLabel(key, cfg);
           symbolSelectEl.appendChild(option);
         }
+        const resolvedKey = findSymbolKeyByExchangeSymbol(preferredKey);
+        const preferred =
+          (preferredKey && filteredKeys.has(preferredKey) && preferredKey) ||
+          (resolvedKey && filteredKeys.has(resolvedKey) && resolvedKey) ||
+          (prev && filteredKeys.has(prev) && prev) ||
+          entries[0][0];
         symbolSelectEl.value = preferred;
         renderSymbolChips();
+        return symbolSelectEl.value !== prev;
       }
       function renderSymbolChips() {
         if (!symbolChipListEl) return;
@@ -388,6 +1169,16 @@
           const text = document.createElement("span");
           text.textContent = getSymbolOptionLabel(key, cfg);
           chip.appendChild(text);
+          const groupBtn = document.createElement("button");
+          groupBtn.type = "button";
+          groupBtn.className = "chip-to-group";
+          groupBtn.textContent = "组";
+          groupBtn.title = "加入自定义分组";
+          groupBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            showAssignSymbolToGroupMenu(cfg.exchangeSymbol, groupBtn);
+          });
+          chip.appendChild(groupBtn);
           const del = document.createElement("button");
           del.type = "button";
           del.textContent = "×";
@@ -501,9 +1292,15 @@
         }
       }
 
+      function removeSymbolFromAllGroups(exchangeSymbol) {
+        Ts12SymbolPrefs.removeSymbolFromAllGroups(symbolPrefs, exchangeSymbol);
+        persistSymbolPrefs();
+      }
+
       function removeSymbol(key) {
         if (!symbolConfig[key] || Object.keys(symbolConfig).length <= 1) return;
         const exchangeSymbol = symbolConfig[key].exchangeSymbol;
+        removeSymbolFromAllGroups(exchangeSymbol);
         if (Object.prototype.hasOwnProperty.call(DEFAULT_SYMBOL_CONFIG, key)) {
           symbolPrefs.hiddenDefaults = Array.from(new Set([...(symbolPrefs.hiddenDefaults || []), key]));
         } else {
@@ -511,6 +1308,7 @@
         }
         persistSymbolPrefs();
         const wasActive = symbolSelectEl.value === key;
+        renderSymbolGroupBar();
         renderSymbolOptions(wasActive ? null : symbolSelectEl.value);
         updatePairInfo(NaN);
         if (wasActive) loadAll();
@@ -522,14 +1320,15 @@
         return raw;
       }
 
-      async function requestKlines(symbol, interval, limit) {
+      async function requestKlines(symbol, interval, limit, endTimeMs) {
         const queryStr =
           "symbol=" +
           encodeURIComponent(symbol) +
           "&interval=" +
           encodeURIComponent(interval) +
           "&limit=" +
-          encodeURIComponent(limit);
+          encodeURIComponent(limit) +
+          (endTimeMs != null ? "&endTime=" + encodeURIComponent(String(endTimeMs)) : "");
         const url = "https://fapi.binance.com/fapi/v1/klines?" + queryStr;
         let lastError = null;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
@@ -542,6 +1341,27 @@
           }
         }
         throw lastError || new Error("行情请求失败");
+      }
+
+      /** 从最新往回拼接 K 线，直到不少于 minBars 根（单请求上限 1500，与 index.html 一致） */
+      async function requestKlinesHistory(symbol, interval, minBars) {
+        const MAX = 1500;
+        let merged = [];
+        let endTime = undefined;
+        while (merged.length < minBars) {
+          const need = minBars - merged.length;
+          const lim = Math.min(MAX, need);
+          const raw = await requestKlines(symbol, interval, lim, endTime);
+          if (!raw.length) break;
+          merged = raw.concat(merged);
+          endTime = Number(raw[0][0]) - 1;
+          if (raw.length < lim) break;
+        }
+        return merged;
+      }
+
+      function rollingHasRenderablePoints(arr) {
+        return Array.isArray(arr) && arr.some((v) => v != null && Number.isFinite(Number(v)));
       }
 
       function stopPolling() {
@@ -674,6 +1494,7 @@
         }
         return result;
       }
+
       function computePrevPeriodExtendVp(raw, interval, vpBands) {
         const n = raw.length;
         const nil = () => new Array(n).fill(null);
@@ -701,7 +1522,532 @@
         }
         return { prevExtendVah, prevExtendPoc, prevExtendVal };
       }
-      function buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal) {
+
+      /** 最新一根 K 线相对当期 VP 的突破状态 */
+      function getDimensionBreakout(raw, interval) {
+        if (!raw?.length) return { up: false, down: false, close: NaN, vah: null, val: null };
+        const vpBands = calcVpBands(raw, interval);
+        const last = raw.length - 1;
+        const close = Number(raw[last][4]);
+        const vah = vpBands.vah[last];
+        const val = vpBands.val[last];
+        if (!Number.isFinite(close) || vah == null || val == null) {
+          return { up: false, down: false, close, vah, val };
+        }
+        return {
+          up: close > vah,
+          down: close < val,
+          close,
+          vah,
+          val,
+        };
+      }
+
+      function renderBreakFilterGrid() {
+        breakFilterGridEl.innerHTML = "";
+        for (const dim of BREAK_DIMENSIONS) {
+          const box = document.createElement("div");
+          box.className = "break-dim";
+          box.innerHTML = `<div class="break-dim-label">${dim.label}</div>`;
+          const upId = `break-${dim.key}-up`;
+          const downId = `break-${dim.key}-down`;
+          const upLabel = document.createElement("label");
+          upLabel.htmlFor = upId;
+          upLabel.innerHTML = `<input type="checkbox" id="${upId}" data-dim="${dim.key}" data-dir="up" />上破 VAH`;
+          const downLabel = document.createElement("label");
+          downLabel.htmlFor = downId;
+          downLabel.innerHTML = `<input type="checkbox" id="${downId}" data-dim="${dim.key}" data-dir="down" />下破 VAL`;
+          const opts = document.createElement("div");
+          opts.className = "break-dim-options";
+          opts.appendChild(upLabel);
+          opts.appendChild(downLabel);
+          box.appendChild(opts);
+          breakFilterGridEl.appendChild(box);
+        }
+      }
+
+      function getActiveBreakFilters() {
+        const active = [];
+        for (const input of breakFilterGridEl.querySelectorAll('input[type="checkbox"]:checked')) {
+          active.push({ dim: input.dataset.dim, dir: input.dataset.dir });
+        }
+        return active;
+      }
+
+      /** 有勾选用当前条件；全部取消勾选时仍按「该次扫描完成时」的条件展示 */
+      function getFiltersForBreakMatch() {
+        const active = getActiveBreakFilters();
+        if (active.length) return active;
+        return breakScanCache?.scanFilters || breakScanCache?.filters || [];
+      }
+
+      function updateBreakClearBtnState() {
+        breakScanClearBtnEl.disabled = !breakScanCache?.records?.length;
+      }
+
+      function clearBreakScanResults() {
+        breakScanCache = null;
+        try {
+          localStorage.removeItem(getBreakScanStorageKey());
+        } catch (_) {}
+        if (Ts12Api?.isEnabled?.()) {
+          Ts12Api.deleteBreakScan().catch((err) => console.warn("云端扫描清除失败", err));
+        }
+        breakFilterResultsEl.classList.add("empty");
+        breakFilterResultsEl.innerHTML = "";
+        breakScanStatusEl.textContent = "已清除扫描结果";
+        breakScanStatusEl.classList.remove("error");
+        updateBreakClearBtnState();
+        requestAnimationFrame(resizeAllCharts);
+      }
+
+      function applySavedBreakFilters(filters) {
+        if (!Array.isArray(filters)) return;
+        for (const input of breakFilterGridEl.querySelectorAll('input[type="checkbox"]')) {
+          input.checked = filters.some((f) => f.dim === input.dataset.dim && f.dir === input.dataset.dir);
+        }
+      }
+
+      function serializeBreakScanForStorage(cache) {
+        return {
+          at: cache.at,
+          totalScanned: cache.totalScanned,
+          errorSymbols: cache.errorSymbols,
+          fixedDims: cache.fixedDims,
+          filters: getActiveBreakFilters(),
+          scanFilters: cache.scanFilters || cache.filters || [],
+          records: cache.records.map((r) => ({
+            exchangeSymbol: r.exchangeSymbol,
+            dimensions: r.dimensions,
+          })),
+        };
+      }
+
+      function applyBreakScanPayload(parsed) {
+          if (!Array.isArray(parsed?.records) || parsed.records.length === 0) return false;
+          applySavedBreakFilters(parsed.filters);
+          breakScanCache = {
+            at: parsed.at,
+            totalScanned: parsed.totalScanned,
+            errorSymbols: parsed.errorSymbols ?? 0,
+            fixedDims: parsed.fixedDims ?? 0,
+            filters: Array.isArray(parsed.filters) ? parsed.filters : [],
+            scanFilters: Array.isArray(parsed.scanFilters)
+              ? parsed.scanFilters
+              : Array.isArray(parsed.filters)
+                ? parsed.filters
+                : [],
+            records: parsed.records.map((r) => ({
+              ...makeScanRecordMeta(r.exchangeSymbol),
+              dimensions: r.dimensions,
+            })),
+          };
+          updateBreakClearBtnState();
+          renderBreakFilterResults();
+          const scanAt = new Date(parsed.at).toLocaleTimeString();
+          breakScanStatusEl.textContent = `已恢复 ${scanAt} 的扫描（${parsed.totalScanned ?? parsed.records.length} 个 USDT 永续）；仅「清除结果」会清空`;
+          breakScanStatusEl.classList.remove("error");
+          return true;
+      }
+
+      function persistBreakScanCache() {
+        if (!breakScanCache?.records?.length) {
+          try {
+            localStorage.removeItem(getBreakScanStorageKey());
+          } catch (_) {}
+          if (Ts12Api?.isEnabled?.()) {
+            clearTimeout(breakScanSaveTimer);
+            breakScanSaveTimer = setTimeout(() => {
+              Ts12Api.deleteBreakScan().catch((err) => console.warn("云端扫描清除失败", err));
+            }, 500);
+          }
+          return;
+        }
+        const payload = serializeBreakScanForStorage(breakScanCache);
+        try {
+          localStorage.setItem(getBreakScanStorageKey(), JSON.stringify(payload));
+        } catch (_) {
+          /* 数据过大或隐私模式：仅内存保留，刷新后丢失 */
+        }
+        if (Ts12Api?.isEnabled?.()) {
+          clearTimeout(breakScanSaveTimer);
+          breakScanSaveTimer = setTimeout(() => {
+            Ts12Api.putBreakScan(payload).catch((err) => console.warn("云端扫描保存失败", err));
+          }, 600);
+        }
+      }
+
+      async function loadBreakScanCacheFromStorage() {
+        if (Ts12Api?.isEnabled?.()) {
+          try {
+            const { breakScan } = await Ts12Api.getBreakScan();
+            if (breakScan && applyBreakScanPayload(breakScan)) {
+              try {
+                localStorage.setItem(getBreakScanStorageKey(), JSON.stringify(breakScan));
+              } catch (_) {}
+              return true;
+            }
+          } catch (err) {
+            console.warn("云端扫描加载失败，尝试本地缓存", err);
+          }
+        }
+        try {
+          const raw = localStorage.getItem(getBreakScanStorageKey());
+          if (!raw) return false;
+          const parsed = JSON.parse(raw);
+          return applyBreakScanPayload(parsed);
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function symbolBreakoutRecordMatchesFilters(record, filters) {
+        if (!filters.length) return true;
+        for (const f of filters) {
+          const dim = record.dimensions[f.dim];
+          if (!dim || dim.error) return false;
+          if (f.dir === "up" && !dim.up) return false;
+          if (f.dir === "down" && !dim.down) return false;
+        }
+        return true;
+      }
+
+      function countDimensionErrors(record) {
+        return BREAK_DIMENSIONS.filter((d) => record.dimensions[d.key]?.error).length;
+      }
+
+      async function acquireScanKlineSlot() {
+        if (scanKlineInflight < SCAN_KLINE_MAX_INFLIGHT) {
+          scanKlineInflight += 1;
+          return;
+        }
+        await new Promise((resolve) => scanKlineWaitQueue.push(resolve));
+        scanKlineInflight += 1;
+      }
+
+      function releaseScanKlineSlot() {
+        scanKlineInflight -= 1;
+        const next = scanKlineWaitQueue.shift();
+        if (next) next();
+      }
+
+      async function fetchRawForBreakScan(exchangeSymbol, interval) {
+        const limit = SCAN_KLINE_BY_INTERVAL[interval] || 700;
+        let lastError = null;
+        await acquireScanKlineSlot();
+        try {
+          for (let attempt = 0; attempt <= SCAN_KLINE_RETRIES; attempt += 1) {
+            try {
+              if (attempt > 0) await sleep(RETRY_BASE_MS * 2 ** attempt);
+              return await requestKlines(exchangeSymbol, interval, limit);
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          throw lastError || new Error("行情请求失败");
+        } finally {
+          releaseScanKlineSlot();
+        }
+      }
+
+      async function rescanDimensionErrors(records) {
+        let fixed = 0;
+        for (const rec of records) {
+          for (const dim of BREAK_DIMENSIONS) {
+            if (!rec.dimensions[dim.key]?.error) continue;
+            try {
+              const raw = await fetchRawForBreakScan(rec.exchangeSymbol, dim.interval);
+              rec.dimensions[dim.key] = getDimensionBreakout(raw, dim.interval);
+              fixed += 1;
+            } catch (_) {
+              /* 仍为 error */
+            }
+            await sleep(SCAN_SYMBOL_GAP_MS);
+          }
+        }
+        return fixed;
+      }
+
+      /** 币安 U 本位 USDT 永续、交易中 —— 突破扫描全市场范围 */
+      async function listBinanceUsdtPerpetualForScan() {
+        const map = await getFuturesSymbolMap();
+        const symbols = [];
+        for (const exchangeSymbol of map.keys()) {
+          if (String(exchangeSymbol).endsWith("USDT")) symbols.push(exchangeSymbol);
+        }
+        symbols.sort((a, b) => a.localeCompare(b));
+        return symbols;
+      }
+
+      function makeScanRecordMeta(exchangeSymbol) {
+        const key = findSymbolKeyByExchangeSymbol(exchangeSymbol);
+        if (key && symbolConfig[key]) {
+          return { exchangeSymbol, symbolKey: key, cfg: symbolConfig[key] };
+        }
+        return {
+          exchangeSymbol,
+          symbolKey: exchangeSymbol,
+          cfg: { exchangeSymbol, pairName: `${formatExchangePair(exchangeSymbol)} 永续合约（币安）` },
+        };
+      }
+
+      function getBreakScanResultLabel(rec) {
+        const key = findSymbolKeyByExchangeSymbol(rec.exchangeSymbol);
+        if (key && symbolConfig[key]) return getSymbolOptionLabel(key, symbolConfig[key]);
+        return formatSymbolDisplay(rec.exchangeSymbol);
+      }
+
+      function isBreakScanResultActive(rec) {
+        const ex = makeSymbolKey(rec.exchangeSymbol);
+        if (breakScanPreviewExchangeSymbol === ex) return true;
+        const selCfg = symbolConfig[symbolSelectEl.value];
+        return ex === selCfg?.exchangeSymbol;
+      }
+
+      function getViewSymbolConfig() {
+        if (breakScanPreviewExchangeSymbol) return makeSymbolConfig(breakScanPreviewExchangeSymbol);
+        return symbolConfig[symbolSelectEl.value];
+      }
+
+      function getNavigateSymbolParam() {
+        if (breakScanPreviewExchangeSymbol) return formatSymbolDisplay(breakScanPreviewExchangeSymbol);
+        return symbolSelectEl.value;
+      }
+
+      function clearBreakScanPreview() {
+        breakScanPreviewExchangeSymbol = null;
+      }
+
+      function previewSymbolFromBreakScan(rec) {
+        const ex = makeSymbolKey(rec.exchangeSymbol);
+        const listKey = findSymbolKeyByExchangeSymbol(ex);
+        if (listKey && symbolConfig[listKey]) {
+          clearBreakScanPreview();
+          const activeGroup = getActiveSymbolGroup();
+          if (activeGroup && !activeGroup.symbols.includes(ex)) {
+            setActiveSymbolGroupId(null);
+            persistSymbolPrefs();
+            renderSymbolGroupBar();
+            renderSymbolOptions(listKey);
+          }
+          symbolSelectEl.value = listKey;
+        } else {
+          breakScanPreviewExchangeSymbol = ex;
+        }
+        updatePairInfo(NaN);
+        loadAll();
+        renderBreakFilterResults();
+      }
+
+      function addSymbolFromBreakScan(rec) {
+        const ex = makeSymbolKey(rec.exchangeSymbol);
+        const activeGroup = getActiveSymbolGroup();
+        if (activeGroup && !activeGroup.symbols.includes(ex)) {
+          setActiveSymbolGroupId(null);
+          persistSymbolPrefs();
+          renderSymbolGroupBar();
+        }
+        let key = findSymbolKeyByExchangeSymbol(ex);
+        if (!key) {
+          if (!(symbolPrefs.customSymbols || []).includes(ex)) {
+            symbolPrefs.customSymbols = [...(symbolPrefs.customSymbols || []), ex];
+            persistSymbolPrefs();
+          }
+          renderSymbolOptions(ex);
+          key = findSymbolKeyByExchangeSymbol(ex);
+        } else {
+          renderSymbolOptions(key);
+        }
+        clearBreakScanPreview();
+        if (!key) return;
+        symbolSelectEl.value = key;
+        updatePairInfo(NaN);
+        loadAll();
+        renderBreakFilterResults();
+      }
+
+      async function scanOneSymbolBreakouts(exchangeSymbol) {
+        const dimensions = {};
+        for (const dim of BREAK_DIMENSIONS) {
+          try {
+            const raw = await fetchRawForBreakScan(exchangeSymbol, dim.interval);
+            dimensions[dim.key] = getDimensionBreakout(raw, dim.interval);
+          } catch (_) {
+            dimensions[dim.key] = { up: false, down: false, error: true };
+          }
+          await sleep(60);
+        }
+        return { ...makeScanRecordMeta(exchangeSymbol), dimensions };
+      }
+
+      async function runBreakoutScan() {
+        if (breakScanRunning) return;
+        const filters = getActiveBreakFilters();
+        if (!filters.length) {
+          breakScanStatusEl.textContent = breakScanCache
+            ? "请先勾选突破条件再扫描；当前仍显示上次扫描结果，可点「清除结果」清空"
+            : "请至少勾选一个突破条件";
+          breakScanStatusEl.classList.add("error");
+          if (breakScanCache) renderBreakFilterResults();
+          return;
+        }
+        breakScanRunning = true;
+        breakScanBtnEl.disabled = true;
+        breakScanStatusEl.classList.remove("error");
+        let targets = [];
+        try {
+          breakScanStatusEl.textContent = "正在获取币安合约列表…";
+          targets = await listBinanceUsdtPerpetualForScan();
+        } catch (_) {
+          breakScanStatusEl.textContent = "获取合约列表失败";
+          breakScanStatusEl.classList.add("error");
+          breakScanRunning = false;
+          breakScanBtnEl.disabled = false;
+          return;
+        }
+        if (!targets.length) {
+          breakScanStatusEl.textContent = "未获取到可扫描交易对";
+          breakScanStatusEl.classList.add("error");
+          breakScanRunning = false;
+          breakScanBtnEl.disabled = false;
+          return;
+        }
+        breakScanStatusEl.textContent = `扫描中 0/${targets.length}（全市场 USDT 永续）…`;
+        const records = [];
+        let done = 0;
+        const queue = [...targets];
+        async function worker() {
+          while (queue.length) {
+            const exchangeSymbol = queue.shift();
+            if (!exchangeSymbol) continue;
+            const rec = await scanOneSymbolBreakouts(exchangeSymbol);
+            records.push(rec);
+            done += 1;
+            breakScanStatusEl.textContent = `扫描中 ${done}/${targets.length}（全市场 USDT 永续）…`;
+            await sleep(SCAN_SYMBOL_GAP_MS);
+          }
+        }
+        const workers = Array.from({ length: Math.min(SCAN_CONCURRENCY, targets.length) }, () => worker());
+        try {
+          await Promise.all(workers);
+          breakScanStatusEl.textContent = "补扫失败维度…";
+          const fixedDims = await rescanDimensionErrors(records);
+          const errorSymbols = records.filter((r) => countDimensionErrors(r) > 0).length;
+          breakScanCache = {
+            records,
+            at: Date.now(),
+            totalScanned: targets.length,
+            errorSymbols,
+            fixedDims,
+            filters: filters.map((f) => ({ ...f })),
+            scanFilters: filters.map((f) => ({ ...f })),
+          };
+          persistBreakScanCache();
+          updateBreakClearBtnState();
+          renderBreakFilterResults();
+        } catch (_) {
+          breakScanStatusEl.textContent = "扫描失败，请稍后重试";
+          breakScanStatusEl.classList.add("error");
+        } finally {
+          breakScanRunning = false;
+          breakScanBtnEl.disabled = false;
+        }
+      }
+
+      function getMatchedBreakRecords() {
+        if (!breakScanCache?.records) return [];
+        const filters = getFiltersForBreakMatch();
+        if (!filters.length) return [];
+        return breakScanCache.records.filter((rec) => symbolBreakoutRecordMatchesFilters(rec, filters));
+      }
+
+      function formatBreakTagsForRecord(record) {
+        const tags = [];
+        for (const dim of BREAK_DIMENSIONS) {
+          const st = record.dimensions[dim.key];
+          if (!st || st.error) continue;
+          if (st.up) tags.push(`<span class="break-tag up">${dim.short}↑</span>`);
+          if (st.down) tags.push(`<span class="break-tag down">${dim.short}↓</span>`);
+        }
+        return tags.join("");
+      }
+
+      function resizeAllCharts() {
+        for (const chart of chartInstances.values()) chart.resize();
+      }
+
+      function renderBreakFilterResults() {
+        updateBreakClearBtnState();
+        const matched = getMatchedBreakRecords();
+        const filters = getFiltersForBreakMatch();
+        breakFilterResultsEl.innerHTML = "";
+        if (!breakScanCache) {
+          breakFilterResultsEl.classList.add("empty");
+          breakScanStatusEl.textContent = "";
+          requestAnimationFrame(resizeAllCharts);
+          return;
+        }
+        if (!filters.length) {
+          breakFilterResultsEl.classList.add("empty");
+          breakScanStatusEl.textContent = "暂无筛选条件，请勾选后查看结果，或点击「清除结果」";
+          requestAnimationFrame(resizeAllCharts);
+          return;
+        }
+        breakFilterResultsEl.classList.remove("empty");
+        if (matched.length === 0) {
+          breakScanStatusEl.textContent = "无匹配币种";
+          breakScanStatusEl.classList.remove("error");
+          const none = document.createElement("span");
+          none.style.cssText = "color:#5f739e;font-size:12px;";
+          none.textContent = "当前组合条件下没有币种满足";
+          breakFilterResultsEl.appendChild(none);
+          requestAnimationFrame(resizeAllCharts);
+          return;
+        }
+        const total = breakScanCache.totalScanned ?? breakScanCache.records.length;
+        const scanAt = breakScanCache.at ? new Date(breakScanCache.at).toLocaleTimeString() : "";
+        const errSym = breakScanCache.errorSymbols ?? 0;
+        const active = getActiveBreakFilters();
+        let status = `共 ${matched.length} 个满足（已扫描 ${total} 个 USDT 永续`;
+        if (scanAt) status += `，${scanAt}`;
+        status += "）";
+        if (!active.length) status += "；未勾选条件，按上次扫描条件显示";
+        if (errSym > 0) status += `；${errSym} 个币种仍有维度拉取失败，建议重新扫描`;
+        breakScanStatusEl.textContent = status;
+        breakScanStatusEl.classList.remove("error");
+        for (const rec of matched) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "break-result-chip";
+          if (isBreakScanResultActive(rec)) chip.classList.add("active");
+          const label = getBreakScanResultLabel(rec);
+          const labelSpan = document.createElement("span");
+          labelSpan.textContent = label;
+          const tagsSpan = document.createElement("span");
+          tagsSpan.className = "break-result-tags";
+          tagsSpan.innerHTML = formatBreakTagsForRecord(rec);
+          chip.appendChild(labelSpan);
+          chip.appendChild(tagsSpan);
+          chip.title = "单击预览图表 · 双击加入币种列表";
+          let clickTimer = null;
+          chip.addEventListener("click", (e) => {
+            e.stopPropagation();
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+              previewSymbolFromBreakScan(rec);
+            }, 220);
+          });
+          chip.addEventListener("dblclick", (e) => {
+            e.stopPropagation();
+            clearTimeout(clickTimer);
+            addSymbolFromBreakScan(rec);
+          });
+          breakFilterResultsEl.appendChild(chip);
+        }
+        requestAnimationFrame(resizeAllCharts);
+      }
+
+      function buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll90d, roll365d) {
         const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
         const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
         const historyBandDelta = vpBands.vah.map((v, i) =>
@@ -786,28 +2132,78 @@
             { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
             { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
             { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
-            { type: "candlestick", silent: true, z: 20, data: candles, itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" } },
+            { type: "candlestick", silent: true, z: 18, data: candles, itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" } },
+            ...(rollingHasRenderablePoints(roll365d)
+              ? [
+                  {
+                    name: "365d Rolling",
+                    type: "line",
+                    smooth: 0.12,
+                    showSymbol: false,
+                    sampling: false,
+                    silent: true,
+                    z: 25,
+                    lineStyle: { width: 1.35, color: "rgba(167,139,250,0.9)", type: "solid" },
+                    data: roll365d,
+                  },
+                  {
+                    name: "90d Rolling",
+                    type: "line",
+                    smooth: 0.15,
+                    showSymbol: false,
+                    sampling: false,
+                    silent: true,
+                    z: 25,
+                    lineStyle: { width: 1.25, color: "rgba(232,184,106,0.92)", type: "solid" },
+                    data: roll90d,
+                  },
+                ]
+              : []),
           ],
         };
       }
       function updatePairInfo(latestPrice) {
-        const cfg = symbolConfig[symbolSelectEl.value];
+        const cfg = getViewSymbolConfig();
+        if (!cfg) {
+          pairInfoEl.textContent = "— | 最新 --";
+          return;
+        }
         const latestText = formatPrice(latestPrice);
-        pairInfoEl.textContent = `${cfg.pairName} | 最新 ${latestText}`;
+        const previewNote = breakScanPreviewExchangeSymbol ? "（预览，未加入列表）" : "";
+        pairInfoEl.textContent = `${cfg.pairName}${previewNote} | 最新 ${latestText}`;
         const shortPair = String(cfg.exchangeSymbol).replace(/USDT$/i, "/USDT");
         document.title = `${shortPair} ${latestText} · 永续概览`;
       }
       async function loadOne(def) {
         const metaEl = document.querySelector(`[data-meta="${def.interval}"]`);
-        const cfg = symbolConfig[symbolSelectEl.value];
+        const cfg = getViewSymbolConfig();
+        if (!cfg) return;
         try {
-          const raw = await requestKlines(cfg.exchangeSymbol, def.interval, KLINE_COUNT);
+          let fetchLimit = KLINE_COUNT;
+          if (def.interval === "1d") {
+            const w365 = barsForCalendarDays("1d", 365);
+            fetchLimit = KLINE_COUNT + w365 - 1;
+          }
+          const rawFull =
+            def.interval === "1d"
+              ? await requestKlinesHistory(cfg.exchangeSymbol, def.interval, fetchLimit)
+              : await requestKlines(cfg.exchangeSymbol, def.interval, fetchLimit);
+          const raw = rawFull.slice(-KLINE_COUNT);
+          let roll90d = null;
+          let roll365d = null;
+          if (def.interval === "1d") {
+            const W90 = barsForCalendarDays("1d", 90);
+            const W365 = barsForCalendarDays("1d", 365);
+            roll90d = calcRollingSmaClose(rawFull, W90).slice(-KLINE_COUNT);
+            roll365d = calcRollingSmaClose(rawFull, W365).slice(-KLINE_COUNT);
+          }
           const timestamps = raw.map((item) => formatTime(Number(item[0])));
           const candles = raw.map((item) => [Number(item[1]), Number(item[4]), Number(item[3]), Number(item[2])]);
           const vpBands = calcVpBands(raw, def.interval);
           const { prevExtendVah, prevExtendPoc, prevExtendVal } = computePrevPeriodExtendVp(raw, def.interval, vpBands);
           const chart = chartInstances.get(def.id);
-          chart.setOption(buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal), true);
+          if (!chart) return;
+          chart.setOption(buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll90d, roll365d), true);
           metaEl.textContent = "";
           metaEl.classList.remove("error");
           if (def.interval === "30m") updatePairInfo(Number(raw[raw.length - 1][4]));
@@ -826,18 +2222,87 @@
           isLoading = false;
         }
       }
-      for (const def of chartDefs) {
-        chartInstances.set(def.id, echarts.init(document.getElementById(def.id), null, { renderer: "canvas" }));
+      function initChartInstances() {
+        if (typeof echarts === "undefined") {
+          pairInfoEl.textContent = "图表库未加载，请检查网络后刷新页面";
+          breakScanStatusEl.textContent = "ECharts 加载失败";
+          breakScanStatusEl.classList.add("error");
+          return false;
+        }
+        for (const def of chartDefs) {
+          const el = document.getElementById(def.id);
+          if (!el) continue;
+          chartInstances.set(def.id, echarts.init(el, null, { renderer: "canvas" }));
+        }
+        return chartInstances.size > 0;
       }
+
+      async function bootApp() {
+        try {
+          symbolPrefs = await Ts12SymbolPrefs.loadAsync(currentUserId);
+          symbolConfig = buildSymbolConfig();
+          renderSymbolOptions(symbolFromQuery);
+          renderSymbolGroupBar();
+          if (!initChartInstances()) return;
+          renderBreakFilterGrid();
+          await loadBreakScanCacheFromStorage();
+          updateBreakClearBtnState();
+          updatePairInfo(NaN);
+          loadAll();
+          startPolling();
+        } catch (err) {
+          console.error(err);
+          pairInfoEl.textContent = "页面初始化失败，请刷新重试";
+          breakScanStatusEl.textContent = String(err?.message || err);
+          breakScanStatusEl.classList.add("error");
+        }
+      }
+
       document.querySelectorAll(".card").forEach((card) => {
         card.addEventListener("click", () => {
           const interval = card.getAttribute("data-interval");
-          window.location.href = `index.html?symbol=${encodeURIComponent(symbolSelectEl.value)}&interval=${encodeURIComponent(interval)}`;
+          window.location.href = `index.html?symbol=${encodeURIComponent(getNavigateSymbolParam())}&interval=${encodeURIComponent(interval)}`;
         });
       });
+      breakFilterEl.addEventListener("click", (e) => e.stopPropagation());
+      breakScanBtnEl.addEventListener("click", () => runBreakoutScan());
+      breakScanClearBtnEl.addEventListener("click", () => clearBreakScanResults());
+      function createGroupFromInput() {
+        const name = symbolGroupNewNameEl.value.trim() || prompt("请输入分组名称：");
+        if (!name?.trim()) return;
+        const g = createSymbolGroup(name.trim());
+        if (!g) return;
+        symbolGroupNewNameEl.value = "";
+        symbolGroupManagerEl.hidden = false;
+        renderSymbolGroupBar();
+        renderSymbolGroupManager();
+      }
+      symbolGroupNewBtnEl.addEventListener("click", () => {
+        symbolGroupManagerEl.hidden = !symbolGroupManagerEl.hidden;
+        if (!symbolGroupManagerEl.hidden) {
+          symbolGroupNewNameEl.focus();
+          renderSymbolGroupManager();
+        }
+      });
+      symbolGroupManageBtnEl.addEventListener("click", () => {
+        symbolGroupManagerEl.hidden = !symbolGroupManagerEl.hidden;
+        if (!symbolGroupManagerEl.hidden) renderSymbolGroupManager();
+      });
+      symbolGroupCreateBtnEl.addEventListener("click", createGroupFromInput);
+      symbolGroupNewNameEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") createGroupFromInput();
+      });
+      breakFilterGridEl.addEventListener("change", () => {
+        if (breakScanCache) {
+          renderBreakFilterResults();
+          persistBreakScanCache();
+        }
+      });
       symbolSelectEl.addEventListener("change", () => {
+        clearBreakScanPreview();
         updatePairInfo(NaN);
         loadAll();
+        if (breakScanCache) renderBreakFilterResults();
       });
       editSymbolsBtn.addEventListener("click", () => {
         symbolEditorEl.hidden = !symbolEditorEl.hidden;
@@ -850,9 +2315,7 @@
       symbolInputEl.addEventListener("keydown", (event) => {
         if (event.key === "Enter") addSymbolFromInput();
       });
-      window.addEventListener("resize", () => {
-        for (const chart of chartInstances.values()) chart.resize();
-      });
+      window.addEventListener("resize", resizeAllCharts);
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
           stopPolling();
@@ -861,9 +2324,7 @@
         loadAll();
         startPolling();
       });
-      updatePairInfo(NaN);
-      loadAll();
-      startPolling();
+      bootApp();
     </script>
   </body>
 </html>

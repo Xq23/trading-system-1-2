@@ -4,6 +4,8 @@
  */
 (function () {
   const qApi = new URLSearchParams(window.location.search).get("api");
-  window.TS12_CONFIG = window.TS12_CONFIG || { apiBase: "" };
+  window.TS12_CONFIG = window.TS12_CONFIG || {
+    apiBase: "https://trading-system-1-2-production.up.railway.app",
+  };
   if (qApi) window.TS12_CONFIG.apiBase = qApi.replace(/\/$/, "");
 })();

@@ -864,9 +864,40 @@
         persistSymbolPrefs();
       }
 
+      /** 分组只存引用；币种须同时在全局列表（customSymbols）才会出现在下拉框 */
+      function ensureSymbolInGlobalList(exchangeSymbol) {
+        const ex = makeSymbolKey(exchangeSymbol);
+        if (!ex) return false;
+        let changed = false;
+        const defaultEntry = Object.entries(DEFAULT_SYMBOL_CONFIG).find(([, cfg]) => cfg.exchangeSymbol === ex);
+        if (defaultEntry) {
+          const hidden = symbolPrefs.hiddenDefaults || [];
+          if (hidden.includes(defaultEntry[0])) {
+            symbolPrefs.hiddenDefaults = hidden.filter((key) => key !== defaultEntry[0]);
+            changed = true;
+          }
+        } else if (!(symbolPrefs.customSymbols || []).includes(ex)) {
+          symbolPrefs.customSymbols = [...(symbolPrefs.customSymbols || []), ex];
+          changed = true;
+        }
+        if (changed) persistSymbolPrefs();
+        return changed;
+      }
+
+      function migrateGroupSymbolsToGlobalList() {
+        let changed = false;
+        for (const g of getSymbolGroups()) {
+          for (const ex of g.symbols || []) {
+            if (ensureSymbolInGlobalList(ex)) changed = true;
+          }
+        }
+        return changed;
+      }
+
       function addSymbolToGroup(groupId, exchangeSymbol) {
         const ex = makeSymbolKey(exchangeSymbol);
         if (!ex) return;
+        ensureSymbolInGlobalList(ex);
         setSymbolGroups(
           getSymbolGroups().map((g) => {
             if (g.id !== groupId) return g;
@@ -1024,7 +1055,7 @@
           addRow.className = "symbol-group-add-symbol";
           const addInput = document.createElement("input");
           addInput.type = "text";
-          addInput.placeholder = "添加 BTC 或 BTCUSDT";
+          addInput.placeholder = "添加 XAG 或 XAGUSDT（会同步进币种下拉）";
           const addBtn = document.createElement("button");
           addBtn.type = "button";
           addBtn.textContent = "添加";
@@ -1259,13 +1290,8 @@
             setSymbolEditorMessage(`${formatSymbolDisplay(exchangeSymbol)} 已在列表中`);
             return;
           }
+          ensureSymbolInGlobalList(exchangeSymbol);
           const defaultEntry = Object.entries(DEFAULT_SYMBOL_CONFIG).find(([, cfg]) => cfg.exchangeSymbol === exchangeSymbol);
-          if (defaultEntry) {
-            symbolPrefs.hiddenDefaults = (symbolPrefs.hiddenDefaults || []).filter((key) => key !== defaultEntry[0]);
-          } else if (!(symbolPrefs.customSymbols || []).includes(exchangeSymbol)) {
-            symbolPrefs.customSymbols = [...(symbolPrefs.customSymbols || []), exchangeSymbol];
-          }
-          persistSymbolPrefs();
           renderSymbolOptions(defaultEntry?.[0] || exchangeSymbol);
           symbolInputEl.value = "";
           updatePairInfo(NaN);
@@ -1835,10 +1861,7 @@
         }
         let key = findSymbolKeyByExchangeSymbol(ex);
         if (!key) {
-          if (!(symbolPrefs.customSymbols || []).includes(ex)) {
-            symbolPrefs.customSymbols = [...(symbolPrefs.customSymbols || []), ex];
-            persistSymbolPrefs();
-          }
+          ensureSymbolInGlobalList(ex);
           renderSymbolOptions(ex);
           key = findSymbolKeyByExchangeSymbol(ex);
         } else {
@@ -2226,6 +2249,9 @@
       async function bootApp() {
         try {
           symbolPrefs = await Ts12SymbolPrefs.loadAsync(currentUserId);
+          if (migrateGroupSymbolsToGlobalList()) {
+            symbolPrefs = await Ts12SymbolPrefs.loadAsync(currentUserId);
+          }
           symbolConfig = buildSymbolConfig();
           renderSymbolOptions(symbolFromQuery);
           renderSymbolGroupBar();

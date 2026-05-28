@@ -165,7 +165,10 @@
         <button type="submit" class="submit" id="submit-btn">登录</button>
       </form>
       <div id="message" class="message"></div>
-      <p class="hint">登录后币种与分组会同步到云端，可在不同设备使用同一账号。请勿在公共电脑勾选「记住我」。</p>
+      <p class="hint">
+        登录走云端账号（与旧版「仅浏览器本地」不是同一套）。若以前在本机用过 xiaqiao，请点「注册」重新创建一次；注册成功后会尽量迁移本机币种偏好。
+        本地调试后端可用：<code style="font-size:10px">login.html?api=http://localhost:8787</code>。请勿在公共电脑勾选「记住我」。
+      </p>
     </div>
     <script>
       const params = new URLSearchParams(window.location.search);

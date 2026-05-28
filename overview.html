@@ -657,7 +657,7 @@
         <input id="symbol-input" type="text" placeholder="输入 BTCUSDT 或 BTC" autocomplete="off" />
         <button id="add-symbol" type="button">增加</button>
         <div id="symbol-editor-message" class="symbol-editor-message"></div>
-        <div class="symbol-editor-tip">可添加范围：币安 U 本位永续合约交易对。输入简称会优先尝试补全为 USDT 合约。</div>
+        <div class="symbol-editor-tip">可添加：币安 U 本位永续（含 TradFi 贵金属 XAU/XAG 等）。输入 BTC 或 XAUUSDT 均可。</div>
         <div id="symbol-chip-list" class="symbol-chip-list"></div>
       </div>
       <div class="break-filter" id="break-filter">
@@ -698,6 +698,7 @@
     <script src="scripts/ts12-api-client.js"></script>
     <script src="scripts/ts12-auth.js"></script>
     <script src="scripts/ts12-symbol-prefs.js"></script>
+    <script src="scripts/ts12-binance-futures.js"></script>
     <script>
       const authSession = Ts12Auth.requireLogin();
       const currentUserId = authSession.userId;
@@ -1236,29 +1237,14 @@
 
       async function getFuturesSymbolMap() {
         if (futuresSymbolMap) return futuresSymbolMap;
-        const url = "https://fapi.binance.com/fapi/v1/exchangeInfo";
-        const info = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
-        const map = new Map();
-        for (const item of info?.symbols || []) {
-          if (item?.contractType !== "PERPETUAL" || item?.status !== "TRADING") continue;
-          if (!item?.symbol) continue;
-          map.set(String(item.symbol).toUpperCase(), item);
-        }
-        futuresSymbolMap = map;
+        const info = await Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
+        futuresSymbolMap = Ts12BinanceFutures.buildMapFromExchangeInfo(info);
         return futuresSymbolMap;
       }
 
       async function resolveFuturesSymbol(input) {
-        const raw = String(input || "").trim().toUpperCase();
-        const clean = raw.replace(/[^A-Z0-9]/g, "");
-        if (!clean) throw new Error("请输入交易对");
         const map = await getFuturesSymbolMap();
-        const candidates = [clean];
-        if (!/(USDT|USDC|FDUSD|TUSD|BUSD)$/.test(clean)) candidates.push(`${clean}USDT`);
-        for (const candidate of candidates) {
-          if (map.has(candidate)) return candidate;
-        }
-        throw new Error("未在币安 U 本位永续合约中找到该交易对");
+        return Ts12BinanceFutures.resolveFromMap(input, map);
       }
 
       async function addSymbolFromInput() {

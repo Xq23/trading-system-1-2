@@ -2403,13 +2403,28 @@
         if (event.key === "Enter") addSymbolFromInput();
       });
       window.addEventListener("resize", resizeAllCharts);
+      async function reloadSymbolPrefsFromCloud() {
+        const prev = JSON.stringify(symbolPrefs);
+        symbolPrefs = await Ts12SymbolPrefs.loadAsync(currentUserId);
+        if (JSON.stringify(symbolPrefs) === prev) return false;
+        symbolConfig = buildSymbolConfig();
+        renderSymbolOptions(symbolSelectEl.value);
+        renderSymbolGroupBar();
+        if (!symbolGroupManagerEl.hidden) renderSymbolGroupManager();
+        updatePairInfo(NaN);
+        loadAll();
+        return true;
+      }
+
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
           stopPolling();
           return;
         }
-        loadAll();
-        startPolling();
+        reloadSymbolPrefsFromCloud().finally(() => {
+          loadAll();
+          startPolling();
+        });
       });
       bootApp();
     </script>

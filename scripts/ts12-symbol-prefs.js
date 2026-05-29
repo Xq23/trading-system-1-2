@@ -69,25 +69,24 @@
     return normalizeSymbolGroups([...map.values()]);
   }
 
-  /** 合并本地与云端，避免分组只在一端时丢失 */
-  function mergePrefs(local, remote) {
+  /** 以较新的 clientUpdatedAt / 服务端时间为准，避免删除被另一端旧缓存合并回来 */
+  function reconcilePrefs(local, remote, serverUpdatedAt) {
     const l = normalizePrefs(local || {});
     const r = normalizePrefs(remote || {});
-    const symbolGroups = mergeSymbolGroups(l.symbolGroups, r.symbolGroups);
-    const groupIds = new Set(symbolGroups.map((g) => g.id));
-    let activeSymbolGroupId = null;
-    if (l.activeSymbolGroupId && groupIds.has(l.activeSymbolGroupId)) {
-      activeSymbolGroupId = l.activeSymbolGroupId;
-    } else if (r.activeSymbolGroupId && groupIds.has(r.activeSymbolGroupId)) {
-      activeSymbolGroupId = r.activeSymbolGroupId;
-    }
-    return {
-      customSymbols: [...new Set([...(l.customSymbols || []), ...(r.customSymbols || [])])],
-      hiddenDefaults: [...new Set([...(l.hiddenDefaults || []), ...(r.hiddenDefaults || [])])],
-      symbolGroups,
-      activeSymbolGroupId,
-      clientUpdatedAt: Math.max(l.clientUpdatedAt || 0, r.clientUpdatedAt || 0, Date.now()),
-    };
+    const localTs = l.clientUpdatedAt || 0;
+    const remoteTs = Math.max(r.clientUpdatedAt || 0, Number(serverUpdatedAt) || 0);
+
+    if (remoteTs > localTs) return { ...r, clientUpdatedAt: remoteTs };
+    if (localTs > remoteTs) return { ...l, clientUpdatedAt: localTs };
+
+    if (prefsHasContent(r)) return { ...r, clientUpdatedAt: remoteTs || localTs || Date.now() };
+    if (prefsHasContent(l)) return { ...l, clientUpdatedAt: localTs || Date.now() };
+    return emptyPrefs();
+  }
+
+  /** @deprecated 并集会复活已删除分组，仅保留供调试 */
+  function mergePrefs(local, remote) {
+    return reconcilePrefs(local, remote, 0);
   }
 
   function prefsEqual(a, b) {
@@ -191,17 +190,16 @@
     const local = loadLocal(userId);
     if (!global.Ts12Api?.isEnabled?.()) return local;
     try {
-      const { prefs: remote } = await global.Ts12Api.getPrefs();
+      const { prefs: remote, updatedAt: serverUpdatedAt } = await global.Ts12Api.getPrefs();
       const normalized = normalizePrefs(remote || {});
-      const merged = mergePrefs(local, normalized);
-      saveLocal(merged, userId);
-      if (!prefsEqual(merged, normalized)) {
-        try {
-          await pushPrefsToCloud(userId);
-        } catch (err) {
-          console.warn("合并后回写云端失败", err);
-        }
-      } else if (!prefsHasContent(normalized) && prefsHasContent(local)) {
+      const localTs = local.clientUpdatedAt || 0;
+      const remoteTs = Math.max(normalized.clientUpdatedAt || 0, Number(serverUpdatedAt) || 0);
+      const reconciled = reconcilePrefs(local, normalized, serverUpdatedAt);
+      saveLocal(reconciled, userId);
+
+      const shouldPushLocal =
+        localTs > remoteTs || (!prefsHasContent(normalized) && prefsHasContent(local));
+      if (shouldPushLocal && !prefsEqual(reconciled, normalized)) {
         try {
           await pushPrefsToCloud(userId);
         } catch (err) {
@@ -311,6 +309,7 @@
     save,
     saveAsync,
     saveAsyncNow,
+    reconcilePrefs,
     mergePrefs,
     buildSymbolConfig,
     removeSymbolFromAllGroups,

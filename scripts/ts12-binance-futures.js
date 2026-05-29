@@ -17,6 +17,40 @@
     return QUOTE_SUFFIXES.some((q) => sym.endsWith(q));
   }
 
+  function isTradFiPerpetual(item) {
+    const ct = String(item?.contractType || "").toUpperCase();
+    return ct === "TRADFI_PERPETUAL" || ct.includes("TRADFI");
+  }
+
+  function isCryptoPerpetual(item) {
+    return isTradableUsdtPerpetual(item) && !isTradFiPerpetual(item);
+  }
+
+  function getSymbolMarketType(item) {
+    return isTradFiPerpetual(item) ? "tradfi" : "crypto";
+  }
+
+  function listUsdtPerpetualSymbols(map, marketFilter) {
+    const f = String(marketFilter || "all").toLowerCase();
+    const symbols = [];
+    for (const [sym, item] of map) {
+      if (!String(sym).endsWith("USDT")) continue;
+      const type = getSymbolMarketType(item);
+      if (f === "crypto" && type !== "crypto") continue;
+      if (f === "tradfi" && type !== "tradfi") continue;
+      symbols.push(sym);
+    }
+    symbols.sort((a, b) => a.localeCompare(b));
+    return symbols;
+  }
+
+  function marketFilterLabel(marketFilter) {
+    const f = String(marketFilter || "all").toLowerCase();
+    if (f === "crypto") return "原生数字货币";
+    if (f === "tradfi") return "TradFi";
+    return "全部 USDT 永续";
+  }
+
   function buildMapFromExchangeInfo(info) {
     const map = new Map();
     for (const item of info?.symbols || []) {
@@ -70,6 +104,11 @@
     EXCHANGE_INFO_URL,
     QUOTE_SUFFIXES,
     isTradableUsdtPerpetual,
+    isTradFiPerpetual,
+    isCryptoPerpetual,
+    getSymbolMarketType,
+    listUsdtPerpetualSymbols,
+    marketFilterLabel,
     buildMapFromExchangeInfo,
     resolveFromMap,
     fetchExchangeInfo,

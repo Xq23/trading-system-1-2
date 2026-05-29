@@ -1328,6 +1328,7 @@
             return;
           }
           ensureSymbolInGlobalList(exchangeSymbol);
+          await persistSymbolPrefs();
           const defaultEntry = Object.entries(DEFAULT_SYMBOL_CONFIG).find(([, cfg]) => cfg.exchangeSymbol === exchangeSymbol);
           renderSymbolOptions(defaultEntry?.[0] || exchangeSymbol);
           symbolInputEl.value = "";
@@ -1931,28 +1932,34 @@
         renderBreakFilterResults();
       }
 
-      function addSymbolFromBreakScan(rec) {
+      async function addSymbolFromBreakScan(rec) {
         const ex = makeSymbolKey(rec.exchangeSymbol);
         const activeGroup = getActiveSymbolGroup();
         if (activeGroup && !activeGroup.symbols.includes(ex)) {
           setActiveSymbolGroupId(null);
-          persistSymbolPrefs();
           renderSymbolGroupBar();
         }
+        ensureSymbolInGlobalList(ex);
+        await persistSymbolPrefs();
         let key = findSymbolKeyByExchangeSymbol(ex);
         if (!key) {
-          ensureSymbolInGlobalList(ex);
           renderSymbolOptions(ex);
           key = findSymbolKeyByExchangeSymbol(ex);
         } else {
           renderSymbolOptions(key);
         }
         clearBreakScanPreview();
-        if (!key) return;
+        if (!key) {
+          breakScanStatusEl.textContent = `加入 ${formatSymbolDisplay(ex)} 失败，请重试`;
+          breakScanStatusEl.classList.add("error");
+          return;
+        }
         symbolSelectEl.value = key;
         updatePairInfo(NaN);
         loadAll();
         renderBreakFilterResults();
+        breakScanStatusEl.textContent = `已加入 ${formatSymbolDisplay(ex)}`;
+        breakScanStatusEl.classList.remove("error");
       }
 
       async function scanOneSymbolBreakouts(exchangeSymbol) {
@@ -2128,17 +2135,24 @@
           chip.appendChild(tagsSpan);
           chip.title = "单击预览图表 · 双击加入币种列表";
           let clickTimer = null;
+          let skipNextClick = false;
           chip.addEventListener("click", (e) => {
             e.stopPropagation();
+            if (skipNextClick) {
+              skipNextClick = false;
+              return;
+            }
             clearTimeout(clickTimer);
             clickTimer = setTimeout(() => {
               previewSymbolFromBreakScan(rec);
-            }, 220);
+            }, 250);
           });
           chip.addEventListener("dblclick", (e) => {
+            e.preventDefault();
             e.stopPropagation();
             clearTimeout(clickTimer);
-            addSymbolFromBreakScan(rec);
+            skipNextClick = true;
+            void addSymbolFromBreakScan(rec);
           });
           breakFilterResultsEl.appendChild(chip);
         }

@@ -1,5 +1,5 @@
 /**
- * 币种偏好：云端开启时以 API 为准，localStorage 作离线缓存
+ * 币种偏好：云端开启时以 API 为准，localStorage 仅作离线缓存
  */
 (function (global) {
   const LEGACY_STORAGE_KEY = "ts12-editable-symbols-v1";
@@ -49,44 +49,6 @@
           ? parsed.clientUpdatedAt
           : 0,
     };
-  }
-
-  function mergeSymbolGroups(a, b) {
-    const map = new Map();
-    for (const g of [...(a || []), ...(b || [])]) {
-      if (!g?.id) continue;
-      const prev = map.get(g.id);
-      if (!prev) {
-        map.set(g.id, { ...g, symbols: [...(g.symbols || [])] });
-        continue;
-      }
-      map.set(g.id, {
-        id: g.id,
-        name: String(g.name || prev.name || "").trim() || prev.name,
-        symbols: [...new Set([...(prev.symbols || []), ...(g.symbols || [])])],
-      });
-    }
-    return normalizeSymbolGroups([...map.values()]);
-  }
-
-  /** 以较新的 clientUpdatedAt / 服务端时间为准，避免删除被另一端旧缓存合并回来 */
-  function reconcilePrefs(local, remote, serverUpdatedAt) {
-    const l = normalizePrefs(local || {});
-    const r = normalizePrefs(remote || {});
-    const localTs = l.clientUpdatedAt || 0;
-    const remoteTs = Math.max(r.clientUpdatedAt || 0, Number(serverUpdatedAt) || 0);
-
-    if (remoteTs > localTs) return { ...r, clientUpdatedAt: remoteTs };
-    if (localTs > remoteTs) return { ...l, clientUpdatedAt: localTs };
-
-    if (prefsHasContent(r)) return { ...r, clientUpdatedAt: remoteTs || localTs || Date.now() };
-    if (prefsHasContent(l)) return { ...l, clientUpdatedAt: localTs || Date.now() };
-    return emptyPrefs();
-  }
-
-  /** @deprecated 并集会复活已删除分组，仅保留供调试 */
-  function mergePrefs(local, remote) {
-    return reconcilePrefs(local, remote, 0);
   }
 
   function prefsEqual(a, b) {
@@ -140,6 +102,18 @@
     );
   }
 
+  /** 写入本地缓存；syncedAt 为服务端时间或用户编辑时间 */
+  function cacheLocal(prefs, userId, syncedAt) {
+    if (!userId) return;
+    try {
+      const payload = {
+        ...normalizePrefs(prefs),
+        clientUpdatedAt: syncedAt || Date.now(),
+      };
+      localStorage.setItem(storageKey(userId), JSON.stringify(payload));
+    } catch (_) {}
+  }
+
   function loadLocal(userId) {
     if (!userId) return emptyPrefs();
     try {
@@ -148,7 +122,7 @@
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed?.accounts)) {
           const flat = flattenLegacyParsed(parsed);
-          saveLocal(flat, userId);
+          cacheLocal(flat, userId, flat.clientUpdatedAt || Date.now());
           return flat;
         }
         return normalizePrefs(parsed);
@@ -157,7 +131,7 @@
     if (!localStorage.getItem(LEGACY_MIGRATED_FLAG)) {
       const migrated = flattenLegacyParsed(readLegacyParsed());
       if (migrated) {
-        saveLocal(migrated, userId);
+        cacheLocal(migrated, userId, Date.now());
         localStorage.setItem(LEGACY_MIGRATED_FLAG, userId);
         return migrated;
       }
@@ -165,81 +139,77 @@
     return emptyPrefs();
   }
 
-  function saveLocal(prefs, userId) {
-    if (!userId) return;
-    try {
-      const payload = {
-        ...normalizePrefs(prefs),
-        clientUpdatedAt: Date.now(),
-      };
-      localStorage.setItem(storageKey(userId), JSON.stringify(payload));
-    } catch (_) {}
-  }
-
   function load(userId) {
     return loadLocal(userId);
   }
 
+  /** 从云端拉取并覆盖本地（云端为权威数据源） */
+  async function pullPrefsFromCloud(userId) {
+    const { prefs: remote, updatedAt } = await global.Ts12Api.getPrefs();
+    const serverTs = Number(updatedAt) || 0;
+    const normalized = normalizePrefs(remote || {});
+    if (serverTs <= 0 && !prefsHasContent(normalized)) return null;
+    const synced = {
+      ...normalized,
+      clientUpdatedAt: serverTs || normalized.clientUpdatedAt || Date.now(),
+    };
+    cacheLocal(synced, userId, synced.clientUpdatedAt);
+    return synced;
+  }
+
   async function pushPrefsToCloud(userId) {
-    if (!global.Ts12Api?.isEnabled?.()) return;
+    if (!global.Ts12Api?.isEnabled?.()) return 0;
     const latest = loadLocal(userId);
-    await global.Ts12Api.putPrefs(latest);
+    const res = await global.Ts12Api.putPrefs(latest);
+    const serverTs = Number(res?.updatedAt) || Date.now();
+    cacheLocal(latest, userId, serverTs);
+    return serverTs;
   }
 
   async function loadAsync(userId) {
-    const local = loadLocal(userId);
-    if (!global.Ts12Api?.isEnabled?.()) return local;
+    if (!userId) return emptyPrefs();
+    if (!global.Ts12Api?.isEnabled?.()) return loadLocal(userId);
     try {
-      const { prefs: remote, updatedAt: serverUpdatedAt } = await global.Ts12Api.getPrefs();
-      const normalized = normalizePrefs(remote || {});
-      const localTs = local.clientUpdatedAt || 0;
-      const remoteTs = Math.max(normalized.clientUpdatedAt || 0, Number(serverUpdatedAt) || 0);
-      const reconciled = reconcilePrefs(local, normalized, serverUpdatedAt);
-      saveLocal(reconciled, userId);
-
-      const shouldPushLocal =
-        localTs > remoteTs || (!prefsHasContent(normalized) && prefsHasContent(local));
-      if (shouldPushLocal && !prefsEqual(reconciled, normalized)) {
-        try {
-          await pushPrefsToCloud(userId);
-        } catch (err) {
-          console.warn("本地偏好上传云端失败", err);
-        }
+      const pulled = await pullPrefsFromCloud(userId);
+      if (pulled) return pulled;
+      const local = loadLocal(userId);
+      if (prefsHasContent(local)) {
+        await pushPrefsToCloud(userId);
+        return loadLocal(userId);
       }
-      return loadLocal(userId);
+      return emptyPrefs();
     } catch (err) {
       console.warn("云端偏好加载失败，使用本地缓存", err);
-      return local;
+      return loadLocal(userId);
     }
   }
 
   function save(prefs, userId) {
-    saveLocal(prefs, userId);
+    cacheLocal(prefs, userId, Date.now());
   }
 
   function saveAsync(prefs, userId) {
-    saveLocal(prefs, userId);
+    cacheLocal(prefs, userId, Date.now());
     if (!global.Ts12Api?.isEnabled?.()) return Promise.resolve();
     clearTimeout(saveTimer);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       saveTimer = setTimeout(async () => {
         try {
           await pushPrefsToCloud(userId);
+          resolve();
         } catch (err) {
           console.warn("云端偏好保存失败", err);
+          reject(err);
         }
-        resolve();
       }, 400);
     });
   }
 
-  function saveAsyncNow(prefs, userId) {
-    saveLocal(prefs, userId);
-    if (!global.Ts12Api?.isEnabled?.()) return Promise.resolve();
+  async function saveAsyncNow(prefs, userId) {
+    cacheLocal(prefs, userId, Date.now());
+    if (!global.Ts12Api?.isEnabled?.()) return;
     clearTimeout(saveTimer);
-    return pushPrefsToCloud(userId).catch((err) => {
-      console.warn("云端偏好保存失败", err);
-    });
+    await pushPrefsToCloud(userId);
   }
 
   function buildSymbolConfig(defaultSymbolConfig, prefs) {
@@ -306,11 +276,10 @@
     normalizePrefs,
     load,
     loadAsync,
+    pullPrefsFromCloud,
     save,
     saveAsync,
     saveAsyncNow,
-    reconcilePrefs,
-    mergePrefs,
     buildSymbolConfig,
     removeSymbolFromAllGroups,
   };

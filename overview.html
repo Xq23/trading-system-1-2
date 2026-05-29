@@ -822,6 +822,7 @@
       const KLINE_COUNT = 700;
       let isLoading = false;
       let pollTimer = null;
+      let prefsSyncTimer = null;
 
       const INTERVAL_MINUTES = {
         "30m": 30,
@@ -887,10 +888,10 @@
         persistSymbolPrefs();
       }
 
-      function deleteSymbolGroup(groupId) {
+      async function deleteSymbolGroup(groupId) {
         setSymbolGroups(getSymbolGroups().filter((g) => g.id !== groupId));
         if (getActiveSymbolGroupId() === groupId) setActiveSymbolGroupId(null);
-        persistSymbolPrefs();
+        await persistSymbolPrefs();
       }
 
       /** 分组只存引用；币种须同时在全局列表（customSymbols）才会出现在下拉框 */
@@ -909,17 +910,17 @@
           symbolPrefs.customSymbols = [...(symbolPrefs.customSymbols || []), ex];
           changed = true;
         }
-        if (changed) persistSymbolPrefs();
         return changed;
       }
 
-      function migrateGroupSymbolsToGlobalList() {
+      async function migrateGroupSymbolsToGlobalList() {
         let changed = false;
         for (const g of getSymbolGroups()) {
           for (const ex of g.symbols || []) {
             if (ensureSymbolInGlobalList(ex)) changed = true;
           }
         }
+        if (changed) await persistSymbolPrefs();
         return changed;
       }
 
@@ -1045,9 +1046,9 @@
           const delBtn = document.createElement("button");
           delBtn.type = "button";
           delBtn.textContent = "删除分组";
-          delBtn.addEventListener("click", () => {
+          delBtn.addEventListener("click", async () => {
             if (!confirm(`删除分组「${g.name}」？`)) return;
-            deleteSymbolGroup(g.id);
+            await deleteSymbolGroup(g.id);
             renderSymbolGroupBar();
             renderSymbolGroupManager();
             refreshSymbolSelectAfterGroupChange(null);
@@ -1166,9 +1167,12 @@
         };
         setTimeout(() => document.addEventListener("click", close, true), 0);
       }
-      function persistSymbolPrefs() {
-        Ts12SymbolPrefs.save(symbolPrefs, currentUserId);
-        Ts12SymbolPrefs.saveAsyncNow(symbolPrefs, currentUserId);
+      async function persistSymbolPrefs() {
+        try {
+          await Ts12SymbolPrefs.saveAsyncNow(symbolPrefs, currentUserId);
+        } catch (err) {
+          console.error("云端同步分组失败", err);
+        }
       }
       const makeSymbolKey = Ts12SymbolPrefs.makeSymbolKey;
       const formatExchangePair = Ts12SymbolPrefs.formatExchangePair;
@@ -1410,6 +1414,10 @@
           clearInterval(pollTimer);
           pollTimer = null;
         }
+        if (prefsSyncTimer) {
+          clearInterval(prefsSyncTimer);
+          prefsSyncTimer = null;
+        }
       }
 
       function startPolling() {
@@ -1417,6 +1425,11 @@
         pollTimer = setInterval(() => {
           if (!document.hidden) loadAll();
         }, POLL_INTERVAL_MS);
+        if (Ts12Api?.isEnabled?.()) {
+          prefsSyncTimer = setInterval(() => {
+            if (!document.hidden) reloadSymbolPrefsFromCloud().catch(() => {});
+          }, 12000);
+        }
       }
 
       function formatTime(ms) {
@@ -2321,9 +2334,7 @@
       async function bootApp() {
         try {
           symbolPrefs = await Ts12SymbolPrefs.loadAsync(currentUserId);
-          if (migrateGroupSymbolsToGlobalList()) {
-            symbolPrefs = await Ts12SymbolPrefs.loadAsync(currentUserId);
-          }
+          await migrateGroupSymbolsToGlobalList();
           symbolConfig = buildSymbolConfig();
           renderSymbolOptions(symbolFromQuery);
           renderSymbolGroupBar();
@@ -2416,6 +2427,9 @@
         return true;
       }
 
+      window.addEventListener("focus", () => {
+        reloadSymbolPrefsFromCloud().catch(() => {});
+      });
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
           stopPolling();

@@ -5,6 +5,32 @@
   const EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo";
   const QUOTE_SUFFIXES = ["USDT", "USDC", "FDUSD", "TUSD", "BUSD"];
 
+  /** 币安部分 TradFi 永续 contractType 仍为 PERPETUAL，需结合 underlyingType / baseAsset */
+  const KNOWN_TRADFI_BASES = new Set([
+    "XAU",
+    "XAG",
+    "CL",
+    "BZ",
+    "NATGAS",
+    "TSLA",
+    "INTC",
+    "CRCL",
+    "AAPL",
+    "AMZN",
+    "GOOG",
+    "GOOGL",
+    "META",
+    "MSFT",
+    "NVDA",
+    "MSTR",
+    "EWY",
+    "EWJ",
+    "CBRS",
+  ]);
+
+  /** 加密综合指数合约（underlyingType 可能非 COIN，但属于币圈指数） */
+  const CRYPTO_COMPOSITE_BASES = new Set(["DEFI", "BTCDOM"]);
+
   function isTradableUsdtPerpetual(item) {
     if (!item?.symbol || item?.status !== "TRADING") return false;
     const ct = String(item.contractType || "");
@@ -18,8 +44,28 @@
   }
 
   function isTradFiPerpetual(item) {
-    const ct = String(item?.contractType || "").toUpperCase();
-    return ct === "TRADFI_PERPETUAL" || ct.includes("TRADFI");
+    if (!item) return false;
+    const ct = String(item.contractType || "").toUpperCase();
+    if (ct === "TRADFI_PERPETUAL" || ct.includes("TRADFI")) return true;
+
+    const base = String(item.baseAsset || "").toUpperCase();
+    if (CRYPTO_COMPOSITE_BASES.has(base)) return false;
+    if (KNOWN_TRADFI_BASES.has(base)) return true;
+
+    const ut = String(item.underlyingType || "").toUpperCase();
+    if (ut === "COIN") return false;
+
+    const subs = Array.isArray(item.underlyingSubType)
+      ? item.underlyingSubType.map((s) => String(s).toUpperCase())
+      : [];
+    if (subs.some((s) => /COMMODIT|METAL|PRECIOUS|ENERGY|EQUITY|STOCK|TRADFI/.test(s))) {
+      return true;
+    }
+
+    // 非 COIN 的 USDT 永续多为 TradFi（黄金/原油/股票等），contractType 常为 PERPETUAL
+    if (ut && ut !== "COIN") return true;
+
+    return false;
   }
 
   function isCryptoPerpetual(item) {

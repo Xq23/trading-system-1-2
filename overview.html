@@ -1139,7 +1139,7 @@
       }
       function persistSymbolPrefs() {
         Ts12SymbolPrefs.save(symbolPrefs, currentUserId);
-        Ts12SymbolPrefs.saveAsync(symbolPrefs, currentUserId);
+        Ts12SymbolPrefs.saveAsyncNow(symbolPrefs, currentUserId);
       }
       const makeSymbolKey = Ts12SymbolPrefs.makeSymbolKey;
       const formatExchangePair = Ts12SymbolPrefs.formatExchangePair;

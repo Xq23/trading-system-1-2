@@ -44,7 +44,63 @@
       hiddenDefaults: Array.isArray(parsed?.hiddenDefaults) ? [...parsed.hiddenDefaults] : [],
       symbolGroups: normalizeSymbolGroups(parsed?.symbolGroups),
       activeSymbolGroupId,
+      clientUpdatedAt:
+        typeof parsed?.clientUpdatedAt === "number" && Number.isFinite(parsed.clientUpdatedAt)
+          ? parsed.clientUpdatedAt
+          : 0,
     };
+  }
+
+  function mergeSymbolGroups(a, b) {
+    const map = new Map();
+    for (const g of [...(a || []), ...(b || [])]) {
+      if (!g?.id) continue;
+      const prev = map.get(g.id);
+      if (!prev) {
+        map.set(g.id, { ...g, symbols: [...(g.symbols || [])] });
+        continue;
+      }
+      map.set(g.id, {
+        id: g.id,
+        name: String(g.name || prev.name || "").trim() || prev.name,
+        symbols: [...new Set([...(prev.symbols || []), ...(g.symbols || [])])],
+      });
+    }
+    return normalizeSymbolGroups([...map.values()]);
+  }
+
+  /** 合并本地与云端，避免分组只在一端时丢失 */
+  function mergePrefs(local, remote) {
+    const l = normalizePrefs(local || {});
+    const r = normalizePrefs(remote || {});
+    const symbolGroups = mergeSymbolGroups(l.symbolGroups, r.symbolGroups);
+    const groupIds = new Set(symbolGroups.map((g) => g.id));
+    let activeSymbolGroupId = null;
+    if (l.activeSymbolGroupId && groupIds.has(l.activeSymbolGroupId)) {
+      activeSymbolGroupId = l.activeSymbolGroupId;
+    } else if (r.activeSymbolGroupId && groupIds.has(r.activeSymbolGroupId)) {
+      activeSymbolGroupId = r.activeSymbolGroupId;
+    }
+    return {
+      customSymbols: [...new Set([...(l.customSymbols || []), ...(r.customSymbols || [])])],
+      hiddenDefaults: [...new Set([...(l.hiddenDefaults || []), ...(r.hiddenDefaults || [])])],
+      symbolGroups,
+      activeSymbolGroupId,
+      clientUpdatedAt: Math.max(l.clientUpdatedAt || 0, r.clientUpdatedAt || 0, Date.now()),
+    };
+  }
+
+  function prefsEqual(a, b) {
+    const strip = (p) => {
+      const n = normalizePrefs(p || {});
+      return JSON.stringify({
+        customSymbols: n.customSymbols,
+        hiddenDefaults: n.hiddenDefaults,
+        symbolGroups: n.symbolGroups,
+        activeSymbolGroupId: n.activeSymbolGroupId,
+      });
+    };
+    return strip(a) === strip(b);
   }
 
   function flattenLegacyParsed(parsed) {
@@ -72,6 +128,7 @@
       hiddenDefaults: [],
       symbolGroups: [],
       activeSymbolGroupId: null,
+      clientUpdatedAt: 0,
     };
   }
 
@@ -112,12 +169,22 @@
   function saveLocal(prefs, userId) {
     if (!userId) return;
     try {
-      localStorage.setItem(storageKey(userId), JSON.stringify(prefs));
+      const payload = {
+        ...normalizePrefs(prefs),
+        clientUpdatedAt: Date.now(),
+      };
+      localStorage.setItem(storageKey(userId), JSON.stringify(payload));
     } catch (_) {}
   }
 
   function load(userId) {
     return loadLocal(userId);
+  }
+
+  async function pushPrefsToCloud(userId) {
+    if (!global.Ts12Api?.isEnabled?.()) return;
+    const latest = loadLocal(userId);
+    await global.Ts12Api.putPrefs(latest);
   }
 
   async function loadAsync(userId) {
@@ -126,15 +193,22 @@
     try {
       const { prefs: remote } = await global.Ts12Api.getPrefs();
       const normalized = normalizePrefs(remote || {});
-      if (prefsHasContent(normalized)) {
-        saveLocal(normalized, userId);
-        return normalized;
+      const merged = mergePrefs(local, normalized);
+      saveLocal(merged, userId);
+      if (!prefsEqual(merged, normalized)) {
+        try {
+          await pushPrefsToCloud(userId);
+        } catch (err) {
+          console.warn("合并后回写云端失败", err);
+        }
+      } else if (!prefsHasContent(normalized) && prefsHasContent(local)) {
+        try {
+          await pushPrefsToCloud(userId);
+        } catch (err) {
+          console.warn("本地偏好上传云端失败", err);
+        }
       }
-      if (prefsHasContent(local)) {
-        await global.Ts12Api.putPrefs(local);
-        return local;
-      }
-      return normalized;
+      return loadLocal(userId);
     } catch (err) {
       console.warn("云端偏好加载失败，使用本地缓存", err);
       return local;
@@ -152,12 +226,21 @@
     return new Promise((resolve) => {
       saveTimer = setTimeout(async () => {
         try {
-          await global.Ts12Api.putPrefs(prefs);
+          await pushPrefsToCloud(userId);
         } catch (err) {
           console.warn("云端偏好保存失败", err);
         }
         resolve();
       }, 400);
+    });
+  }
+
+  function saveAsyncNow(prefs, userId) {
+    saveLocal(prefs, userId);
+    if (!global.Ts12Api?.isEnabled?.()) return Promise.resolve();
+    clearTimeout(saveTimer);
+    return pushPrefsToCloud(userId).catch((err) => {
+      console.warn("云端偏好保存失败", err);
     });
   }
 
@@ -227,6 +310,8 @@
     loadAsync,
     save,
     saveAsync,
+    saveAsyncNow,
+    mergePrefs,
     buildSymbolConfig,
     removeSymbolFromAllGroups,
   };

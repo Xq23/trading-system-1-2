@@ -267,11 +267,17 @@
         color: #dbe6ff;
       }
       .break-scan-status {
+        flex: 1 1 120px;
+        min-width: 0;
         font-size: 12px;
         color: #9eb0d8;
       }
       .break-scan-status.error {
         color: #ff9090;
+      }
+      .break-filter-head .break-market-filter {
+        flex: 1 1 auto;
+        min-width: 0;
       }
       .break-market-filter {
         display: flex;
@@ -663,7 +669,6 @@
             <span class="symbol-group-row-label">分组：</span>
             <div class="symbol-group-chips" id="symbol-group-chips"></div>
             <div class="symbol-group-actions">
-              <button type="button" id="symbol-group-new-btn">+ 新建分组</button>
               <button type="button" id="symbol-group-manage-btn">管理分组</button>
             </div>
           </div>
@@ -686,15 +691,15 @@
       <div class="break-filter" id="break-filter">
         <div class="break-filter-head">
           <span class="break-filter-title">突破筛选</span>
+          <div class="break-market-filter" id="break-market-filter">
+            <span class="break-market-filter-label">品种类型</span>
+            <label><input type="radio" name="break-market" value="all" checked />全部</label>
+            <label><input type="radio" name="break-market" value="crypto" />原生数字货币</label>
+            <label><input type="radio" name="break-market" value="tradfi" />TradFi</label>
+          </div>
           <button id="break-scan-btn" type="button">扫描</button>
           <button id="break-scan-clear-btn" type="button" class="break-scan-clear-btn" disabled>清除结果</button>
           <span id="break-scan-status" class="break-scan-status"></span>
-        </div>
-        <div class="break-market-filter" id="break-market-filter">
-          <span class="break-market-filter-label">品种类型</span>
-          <label><input type="radio" name="break-market" value="all" checked />全部</label>
-          <label><input type="radio" name="break-market" value="crypto" />原生数字货币</label>
-          <label><input type="radio" name="break-market" value="tradfi" />TradFi</label>
         </div>
         <div class="break-filter-grid" id="break-filter-grid"></div>
         <div id="break-filter-results" class="break-filter-results empty"></div>
@@ -767,7 +772,6 @@
       const symbolGroupManagerEl = document.getElementById("symbol-group-manager");
       const symbolGroupManagerListEl = document.getElementById("symbol-group-manager-list");
       const symbolGroupNewNameEl = document.getElementById("symbol-group-new-name");
-      const symbolGroupNewBtnEl = document.getElementById("symbol-group-new-btn");
       const symbolGroupManageBtnEl = document.getElementById("symbol-group-manage-btn");
       const symbolGroupCreateBtnEl = document.getElementById("symbol-group-create-btn");
       const userDisplayEl = document.getElementById("user-display");
@@ -2372,16 +2376,12 @@
         renderSymbolGroupBar();
         renderSymbolGroupManager();
       }
-      symbolGroupNewBtnEl.addEventListener("click", () => {
-        symbolGroupManagerEl.hidden = !symbolGroupManagerEl.hidden;
-        if (!symbolGroupManagerEl.hidden) {
-          symbolGroupNewNameEl.focus();
-          renderSymbolGroupManager();
-        }
-      });
       symbolGroupManageBtnEl.addEventListener("click", () => {
         symbolGroupManagerEl.hidden = !symbolGroupManagerEl.hidden;
-        if (!symbolGroupManagerEl.hidden) renderSymbolGroupManager();
+        if (!symbolGroupManagerEl.hidden) {
+          renderSymbolGroupManager();
+          symbolGroupNewNameEl.focus();
+        }
       });
       symbolGroupCreateBtnEl.addEventListener("click", createGroupFromInput);
       symbolGroupNewNameEl.addEventListener("keydown", (e) => {

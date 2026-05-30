@@ -193,6 +193,50 @@ export async function runVolumeAlertScanNow() {
   await runPendingScans();
 }
 
+/** 指定 4h 批次（开盘 UTC 毫秒时间戳）检测 */
+export async function runVolumeAlertScanTriggers(triggerOpenTimes, { force = false } = {}) {
+  const triggers = [...new Set((Array.isArray(triggerOpenTimes) ? triggerOpenTimes : [triggerOpenTimes])
+    .map(Number)
+    .filter(Number.isFinite))].sort((a, b) => a - b);
+  if (!triggers.length) throw new Error("triggerOpenTime 无效");
+
+  while (scanning) await sleep(1000);
+  scanning = true;
+  try {
+    const symbols = await listUsdtPerpetualSymbols();
+    if (!symbols.length) throw new Error("无可用 USDT 永续列表");
+
+    const results = [];
+    for (const triggerOpenTime of triggers) {
+      if (!force && isVolumeAlertScanDone(triggerOpenTime)) {
+        results.push({
+          triggerOpenTime,
+          triggerAt: new Date(triggerOpenTime).toISOString(),
+          skipped: true,
+          reason: "已检测过",
+        });
+        continue;
+      }
+      console.log(`[volume-alert] 指定批次 ${new Date(triggerOpenTime).toISOString()} …`);
+      const batch = await scanTriggerBatch(triggerOpenTime, symbols);
+      results.push({
+        ...batch,
+        triggerAt: new Date(triggerOpenTime).toISOString(),
+        skipped: false,
+      });
+    }
+    return {
+      triggers,
+      symbolCount: symbols.length,
+      results,
+      totalAlerts: results.reduce((n, r) => n + (r.alertCount || 0), 0),
+      totalInserted: results.reduce((n, r) => n + (r.inserted || 0), 0),
+    };
+  } finally {
+    scanning = false;
+  }
+}
+
 /** 回测最近 N 根已收盘 4h K 线（按真实币安数据检测并写入数据库） */
 export async function runVolumeAlertBacktest({ periods = 2, force = false } = {}) {
   const count = Math.min(Math.max(Number(periods) || 2, 1), 7);

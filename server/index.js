@@ -14,7 +14,12 @@ import {
   upsertBreakScan,
   upsertPrefs,
 } from "./db.js";
-import { startVolumeAlertScheduler, runVolumeAlertBacktest, isVolumeAlertScanning } from "./volume-alert-scanner.js";
+import {
+  startVolumeAlertScheduler,
+  runVolumeAlertBacktest,
+  runVolumeAlertScanTriggers,
+  isVolumeAlertScanning,
+} from "./volume-alert-scanner.js";
 
 const PORT = Number(process.env.PORT) || 8787;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me-in-production";
@@ -229,8 +234,22 @@ app.post("/api/volume-alerts/batch", authMiddleware, (req, res) => {
 app.post("/api/volume-alerts/backtest", authMiddleware, (req, res) => {
   const periods = Number(req.body?.periods) || 2;
   const force = Boolean(req.body?.force);
+  const triggerOpenTimes = req.body?.triggerOpenTimes ?? req.body?.triggerOpenTime;
   if (isVolumeAlertScanning()) {
     res.status(409).json({ error: "已有扫描任务进行中，请稍后再试" });
+    return;
+  }
+  if (triggerOpenTimes != null) {
+    const list = Array.isArray(triggerOpenTimes) ? triggerOpenTimes : [triggerOpenTimes];
+    res.json({
+      ok: true,
+      message: `已开始检测指定 ${list.length} 个 4h 批次，请稍后刷新历史列表`,
+      triggerOpenTimes: list,
+      force,
+    });
+    void runVolumeAlertScanTriggers(list, { force }).catch((err) => {
+      console.error("[volume-alert] 指定批次检测失败", err);
+    });
     return;
   }
   res.json({

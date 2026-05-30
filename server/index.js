@@ -14,7 +14,7 @@ import {
   upsertBreakScan,
   upsertPrefs,
 } from "./db.js";
-import { startVolumeAlertScheduler } from "./volume-alert-scanner.js";
+import { startVolumeAlertScheduler, runVolumeAlertBacktest, isVolumeAlertScanning } from "./volume-alert-scanner.js";
 
 const PORT = Number(process.env.PORT) || 8787;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me-in-production";
@@ -224,6 +224,24 @@ app.post("/api/volume-alerts/batch", authMiddleware, (req, res) => {
   }
   const inserted = insertVolumeAlerts(alerts, Date.now());
   res.json({ ok: true, inserted });
+});
+
+app.post("/api/volume-alerts/backtest", authMiddleware, (req, res) => {
+  const periods = Number(req.body?.periods) || 2;
+  const force = Boolean(req.body?.force);
+  if (isVolumeAlertScanning()) {
+    res.status(409).json({ error: "已有扫描任务进行中，请稍后再试" });
+    return;
+  }
+  res.json({
+    ok: true,
+    message: `已开始回测最近 ${Math.min(Math.max(periods, 1), 7)} 根 4h K 线，请稍后刷新历史列表查看`,
+    periods,
+    force,
+  });
+  void runVolumeAlertBacktest({ periods, force }).catch((err) => {
+    console.error("[volume-alert] 回测失败", err);
+  });
 });
 
 app.use((err, _req, res, _next) => {

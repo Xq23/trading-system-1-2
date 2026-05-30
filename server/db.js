@@ -240,11 +240,32 @@ export function listVolumeAlertsByTrigger(triggerCandleOpenTime) {
 
 export function listLatestVolumeAlertBatch() {
   const scan = getLatestVolumeAlertScan();
-  if (!scan) {
-    return { scan: null, alerts: [] };
+  if (scan) {
+    return { scan, alerts: listVolumeAlertsByTrigger(scan.triggerCandleOpenTime) };
   }
-  const alerts = listVolumeAlertsByTrigger(scan.triggerCandleOpenTime);
-  return { scan, alerts };
+  const latestRow = db
+    .prepare(
+      `SELECT trigger_candle_open_time AS triggerCandleOpenTime,
+              MAX(created_at) AS scannedAt,
+              COUNT(*) AS alertCount
+       FROM volume_alerts
+       WHERE trigger_candle_open_time IS NOT NULL
+       GROUP BY trigger_candle_open_time
+       ORDER BY trigger_candle_open_time DESC
+       LIMIT 1`
+    )
+    .get();
+  if (!latestRow) return { scan: null, alerts: [] };
+  return {
+    scan: {
+      triggerCandleOpenTime: latestRow.triggerCandleOpenTime,
+      scannedAt: latestRow.scannedAt,
+      symbolCount: null,
+      alertCount: latestRow.alertCount,
+      insertedCount: null,
+    },
+    alerts: listVolumeAlertsByTrigger(latestRow.triggerCandleOpenTime),
+  };
 }
 
 export function listVolumeAlerts({ limit = 100, offset = 0 } = {}) {

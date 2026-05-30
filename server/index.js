@@ -13,6 +13,8 @@ import {
   listLatestVolumeAlertBatch,
   listVolumeAlertHistory,
   listVolumeAlerts,
+  logVolumeAlertScan,
+  setSystemMeta,
   upsertBreakScan,
   upsertPrefs,
 } from "./db.js";
@@ -252,6 +254,31 @@ app.post("/api/volume-alerts/batch", authMiddleware, (req, res) => {
   }
   const inserted = insertVolumeAlerts(alerts, Date.now());
   res.json({ ok: true, inserted });
+});
+
+app.post("/api/volume-alerts/scan-complete", authMiddleware, (req, res) => {
+  const triggerCandleOpenTime = Number(req.body?.triggerCandleOpenTime);
+  const symbolCount = Number(req.body?.symbolCount) || 0;
+  const alerts = req.body?.alerts;
+  if (!Number.isFinite(triggerCandleOpenTime)) {
+    res.status(400).json({ error: "triggerCandleOpenTime 无效" });
+    return;
+  }
+  if (!Array.isArray(alerts)) {
+    res.status(400).json({ error: "alerts 无效" });
+    return;
+  }
+  const scannedAt = Date.now();
+  const inserted = insertVolumeAlerts(alerts, scannedAt);
+  logVolumeAlertScan({
+    triggerCandleOpenTime,
+    scannedAt,
+    symbolCount,
+    alertCount: alerts.length,
+    inserted,
+  });
+  setSystemMeta("volume_alert_last_trigger", String(triggerCandleOpenTime));
+  res.json({ ok: true, inserted, alertCount: alerts.length });
 });
 
 app.post("/api/volume-alerts/backtest", authMiddleware, (req, res) => {

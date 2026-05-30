@@ -108,13 +108,22 @@ async function fetchFromFapi(path) {
   throw lastError || new Error("币安 API 请求失败");
 }
 
-async function fetchJson(url) {
+  async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/json", "User-Agent": "ts12-volume-alert/1.0" },
+    });
+    const text = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    if (!text.trim()) throw new Error("币安返回空响应");
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error("币安返回无效 JSON");
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -250,8 +259,10 @@ async function runPendingScans() {
     }
   } catch (err) {
     console.error("[volume-alert] 扫描失败", err);
+    setScanError(err);
   } finally {
     scanning = false;
+    scanProgress.phase = "idle";
   }
 }
 

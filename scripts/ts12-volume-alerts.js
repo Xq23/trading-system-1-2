@@ -1,8 +1,15 @@
 /**
- * 4h 成交量异常预警：前端展示工具（检测由服务端定时执行）
+ * 4h 成交量异常预警：展示 + 浏览器端扫描（上传至服务端）
  */
 (function (global) {
+  const BASELINE_BARS = 30;
+  const SINGLE_RATIO = 10;
+  const DOUBLE_RATIO = 5;
   const FOUR_H_MS = 4 * 60 * 60 * 1000;
+  const KLINE_LIMIT = 80;
+  const SCAN_CONCURRENCY = 5;
+  const SYMBOL_GAP_MS = 50;
+  const REQUEST_TIMEOUT_MS = 15000;
 
   function makeSymbolKey(exchangeSymbol) {
     return String(exchangeSymbol || "").trim().toUpperCase();
@@ -46,8 +53,222 @@
     return `${y}-${m}-${day} ${h}:${min}`;
   }
 
+  function getLatestClosed4hOpenTime(now = Date.now()) {
+    const closedBoundary = Math.floor(now / FOUR_H_MS) * FOUR_H_MS;
+    return closedBoundary - FOUR_H_MS;
+  }
+
   function getNext4hCloseMs(now = Date.now()) {
     return Math.ceil(now / FOUR_H_MS) * FOUR_H_MS;
+  }
+
+  function dateKeyInTimeZone(ms, timeZone = "Asia/Shanghai") {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(ms));
+  }
+
+  function listTodayClosedTriggers(timeZone = "Asia/Shanghai", now = Date.now()) {
+    const latest = getLatestClosed4hOpenTime(now);
+    const todayKey = dateKeyInTimeZone(now, timeZone);
+    const triggers = [];
+    for (let t = latest; t >= latest - 6 * FOUR_H_MS; t -= FOUR_H_MS) {
+      const closeMs = t + FOUR_H_MS - 1;
+      if (dateKeyInTimeZone(closeMs, timeZone) === todayKey) {
+        triggers.push(t);
+      }
+    }
+    return triggers.sort((a, b) => a - b);
+  }
+
+  function averageVolume(bars) {
+    if (!bars.length) return 0;
+    return bars.reduce((acc, k) => acc + Number(k[5] || 0), 0) / bars.length;
+  }
+
+  function evaluateVolumeAlertsForTrigger(exchangeSymbol, klines, triggerOpenTime) {
+    const ex = makeSymbolKey(exchangeSymbol);
+    const trigger = Number(triggerOpenTime);
+    if (!Array.isArray(klines) || !Number.isFinite(trigger)) return [];
+
+    const idx = klines.findIndex((k) => Number(k[0]) === trigger);
+    if (idx < BASELINE_BARS) return [];
+
+    const closed = klines.slice(0, idx + 1);
+    const latest = closed[closed.length - 1];
+    const latestVol = Number(latest[5]);
+    const baseline = closed.slice(closed.length - BASELINE_BARS - 1, closed.length - 1);
+    const avgVol = averageVolume(baseline);
+    if (!(avgVol > 0) || !Number.isFinite(latestVol)) return [];
+
+    const alerts = [];
+    const latestOpen = Number(latest[0]);
+    const latestClose = Number(latest[6]);
+
+    if (latestVol >= SINGLE_RATIO * avgVol) {
+      alerts.push({
+        exchangeSymbol: ex,
+        conditionType: "single10x",
+        volume: latestVol,
+        avgVolume: avgVol,
+        ratio: latestVol / avgVol,
+        candleOpenTime: latestOpen,
+        candleCloseTime: latestClose,
+        triggerCandleOpenTime: trigger,
+      });
+    }
+
+    if (closed.length >= BASELINE_BARS + 2) {
+      const prev = closed[closed.length - 2];
+      const baseline2 = closed.slice(closed.length - BASELINE_BARS - 2, closed.length - 2);
+      const avg2 = averageVolume(baseline2);
+      const volPrev = Number(prev[5]);
+      if (avg2 > 0 && volPrev >= DOUBLE_RATIO * avg2 && latestVol >= DOUBLE_RATIO * avg2) {
+        alerts.push({
+          exchangeSymbol: ex,
+          conditionType: "double5x",
+          volume: latestVol,
+          avgVolume: avg2,
+          ratio: Math.min(volPrev / avg2, latestVol / avg2),
+          candleOpenTime: Number(prev[0]),
+          candleCloseTime: latestClose,
+          triggerCandleOpenTime: trigger,
+        });
+      }
+    }
+
+    return alerts;
+  }
+
+  async function fetchJsonWithTimeout(url, timeoutMs = REQUEST_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function fetch4hKlines(exchangeSymbol) {
+    const symbol = makeSymbolKey(exchangeSymbol);
+    const url =
+      "https://fapi.binance.com/fapi/v1/klines?" +
+      `symbol=${encodeURIComponent(symbol)}&interval=4h&limit=${KLINE_LIMIT}`;
+    const raw = await fetchJsonWithTimeout(url);
+    if (!Array.isArray(raw) || raw.length < BASELINE_BARS + 1) throw new Error("空数据");
+    return raw;
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function runPool(items, worker, concurrency) {
+    let index = 0;
+    const runners = Array.from({ length: Math.max(1, concurrency) }, async () => {
+      while (index < items.length) {
+        const i = index;
+        index += 1;
+        try {
+          await worker(items[i], i);
+        } catch (err) {
+          console.warn(`[volume-alert] ${items[i]} 扫描失败`, err?.message || err);
+        }
+      }
+    });
+    await Promise.all(runners);
+  }
+
+  async function scanTriggerBatchInBrowser(triggerOpenTime, symbols, onProgress) {
+    const found = [];
+    let done = 0;
+    await runPool(
+      symbols,
+      async (exchangeSymbol) => {
+        await sleep(SYMBOL_GAP_MS);
+        const klines = await fetch4hKlines(exchangeSymbol);
+        found.push(...evaluateVolumeAlertsForTrigger(exchangeSymbol, klines, triggerOpenTime));
+        done += 1;
+        if (onProgress) {
+          onProgress({
+            phase: "scanning_symbols",
+            triggerOpenTime,
+            symbolIndex: done,
+            symbolTotal: symbols.length,
+          });
+        }
+      },
+      SCAN_CONCURRENCY
+    );
+    return found;
+  }
+
+  /** 在浏览器扫描今天所有已收线批次，并上传至服务端（含 0 条批次） */
+  async function runTodayScanInBrowser({ clearFirst = false, onProgress } = {}) {
+    if (!global.Ts12Api?.isEnabled?.()) throw new Error("云端 API 未启用");
+    if (!global.Ts12BinanceFutures?.fetchExchangeInfo) {
+      throw new Error("缺少币安合约模块");
+    }
+
+    const triggers = listTodayClosedTriggers();
+    if (!triggers.length) throw new Error("今天暂无已收线的 4h K 线");
+
+    if (clearFirst) {
+      if (onProgress) onProgress({ phase: "clearing" });
+      await global.Ts12Api.clearVolumeAlerts();
+    }
+
+    if (onProgress) onProgress({ phase: "fetching_symbols" });
+    const info = await global.Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
+    const map = global.Ts12BinanceFutures.buildMapFromExchangeInfo(info);
+    const symbols = global.Ts12BinanceFutures.listUsdtPerpetualSymbols(map, "all");
+    if (!symbols.length) throw new Error("无可用 USDT 永续列表");
+
+    const results = [];
+    for (let i = 0; i < triggers.length; i += 1) {
+      const triggerOpenTime = triggers[i];
+      if (onProgress) {
+        onProgress({
+          phase: "scanning_batch",
+          triggerIndex: i + 1,
+          triggerTotal: triggers.length,
+          triggerOpenTime,
+          symbolIndex: 0,
+          symbolTotal: symbols.length,
+        });
+      }
+      const alerts = await scanTriggerBatchInBrowser(triggerOpenTime, symbols, (p) => {
+        if (onProgress) {
+          onProgress({
+            phase: "scanning_symbols",
+            triggerIndex: i + 1,
+            triggerTotal: triggers.length,
+            triggerOpenTime,
+            symbolIndex: p.symbolIndex,
+            symbolTotal: p.symbolTotal,
+          });
+        }
+      });
+      const payload = {
+        triggerCandleOpenTime: triggerOpenTime,
+        symbolCount: symbols.length,
+        alerts,
+      };
+      if (global.Ts12Api.postVolumeAlertScanComplete) {
+        await global.Ts12Api.postVolumeAlertScanComplete(payload);
+      } else {
+        await global.Ts12Api.postVolumeAlertsBatch(alerts);
+      }
+      results.push({ triggerOpenTime, alertCount: alerts.length });
+    }
+
+    return { triggers, symbolCount: symbols.length, results };
   }
 
   async function loadLatestBatch() {
@@ -64,6 +285,7 @@
 
   global.Ts12VolumeAlerts = {
     FOUR_H_MS,
+    BASELINE_BARS,
     makeSymbolKey,
     formatExchangePair,
     formatSymbolDisplay,
@@ -71,6 +293,9 @@
     formatRatio,
     formatAlertTime,
     getNext4hCloseMs,
+    listTodayClosedTriggers,
+    evaluateVolumeAlertsForTrigger,
+    runTodayScanInBrowser,
     loadLatestBatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

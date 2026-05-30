@@ -92,3 +92,26 @@ export function listPendingTriggerTimes(lastProcessed, now = Date.now()) {
   }
   return times;
 }
+
+function dateKeyInTimeZone(ms, timeZone = "Asia/Shanghai") {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+/** 指定时区「今天」已收线的 4h 批次（按开盘 UTC 时间升序） */
+export function listTodayClosedTriggers(timeZone = "Asia/Shanghai", now = Date.now()) {
+  const latest = getLatestClosed4hOpenTime(now);
+  const todayKey = dateKeyInTimeZone(now, timeZone);
+  const triggers = [];
+  for (let t = latest; t >= latest - 6 * FOUR_H_MS; t -= FOUR_H_MS) {
+    const closeMs = t + FOUR_H_MS - 1;
+    if (dateKeyInTimeZone(closeMs, timeZone) === todayKey) {
+      triggers.push(t);
+    }
+  }
+  return triggers.sort((a, b) => a - b);
+}

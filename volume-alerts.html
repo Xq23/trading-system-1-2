@@ -36,7 +36,7 @@
         font-weight: 600;
       }
       .sub {
-        flex: 1 1 auto;
+        flex: 1 1 100%;
         color: #7f92bd;
         font-size: 13px;
       }
@@ -74,6 +74,49 @@
       .status.error {
         color: #ff9090;
       }
+      .batch-list {
+        display: flex;
+        flex-direction: column;
+      }
+      .batch {
+        border-bottom: 1px solid #1a2742;
+      }
+      .batch:last-child {
+        border-bottom: none;
+      }
+      .batch-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        padding: 10px 12px;
+        background: #111b2f;
+        font-size: 13px;
+      }
+      .batch-time {
+        font-weight: 600;
+      }
+      .batch-meta {
+        color: #7f92bd;
+        font-size: 12px;
+      }
+      .batch-count {
+        margin-left: auto;
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(255, 179, 71, 0.15);
+        color: #ffc971;
+      }
+      .batch-count.zero {
+        background: rgba(127, 146, 189, 0.15);
+        color: #9eb0d8;
+      }
+      .batch-empty {
+        padding: 12px;
+        color: #5f739e;
+        font-size: 12px;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -81,19 +124,17 @@
       }
       th,
       td {
-        padding: 10px 12px;
+        padding: 8px 12px;
         text-align: left;
         border-bottom: 1px solid #1a2742;
       }
       th {
         color: #9eb0d8;
         font-weight: 600;
-        background: #111b2f;
-        position: sticky;
-        top: 0;
+        background: #0d1527;
       }
-      tr:hover td {
-        background: rgba(36, 58, 110, 0.22);
+      tr:last-child td {
+        border-bottom: none;
       }
       .sym {
         font-weight: 600;
@@ -124,47 +165,19 @@
         padding: 10px 12px;
         border-top: 1px solid #1f2f4e;
       }
-      @media (max-width: 640px) {
-        table,
-        thead,
-        tbody,
-        th,
-        td,
-        tr {
-          display: block;
-        }
-        thead {
-          display: none;
-        }
-        tr {
-          border-bottom: 1px solid #1f2f4e;
-          padding: 8px 0;
-        }
-        td {
-          border: none;
-          padding: 4px 12px;
-        }
-        td::before {
-          content: attr(data-label);
-          display: inline-block;
-          width: 72px;
-          color: #7f92bd;
-          font-size: 11px;
-        }
-      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <div class="head">
         <h1>成交量预警历史</h1>
-        <span class="sub">服务端每 4h 收线自动检测 · 单根≥10× 或 连续 2 根≥5×（相对近 30 根均量）</span>
+        <span class="sub">按 4h 收线批次展示 · 含 0 条预警的检测记录 · 服务端自动检测</span>
         <a href="overview.html">返回概览</a>
         <button type="button" id="reload-btn">刷新</button>
       </div>
       <div class="panel">
         <div id="status" class="status">加载中…</div>
-        <div id="table-wrap"></div>
+        <div id="batch-wrap" class="batch-list"></div>
         <div class="foot">
           <span id="page-info"></span>
           <button type="button" id="load-more-btn" disabled>加载更多</button>
@@ -178,13 +191,13 @@
     <script src="scripts/ts12-volume-alerts.js"></script>
     <script>
       Ts12Auth.requireLogin();
-      const PAGE_SIZE = 50;
+      const PAGE_SIZE = 20;
       const statusEl = document.getElementById("status");
-      const tableWrapEl = document.getElementById("table-wrap");
+      const batchWrapEl = document.getElementById("batch-wrap");
       const pageInfoEl = document.getElementById("page-info");
       const loadMoreBtn = document.getElementById("load-more-btn");
       const reloadBtn = document.getElementById("reload-btn");
-      let alerts = [];
+      let batches = [];
       let total = 0;
       let offset = 0;
       let loading = false;
@@ -208,51 +221,57 @@
         return n.toFixed(2);
       }
 
-      function renderTable() {
-        if (!alerts.length) {
-          tableWrapEl.innerHTML = '<div class="empty">暂无预警记录。服务端会在每次 4h K 线收线后自动检测，无需打开概览页。</div>';
+      function batchCloseLabel(triggerOpenTime) {
+        return formatTime(triggerOpenTime + Ts12VolumeAlerts.FOUR_H_MS - 1);
+      }
+
+      function renderBatches() {
+        if (!batches.length) {
+          batchWrapEl.innerHTML =
+            '<div class="empty">暂无检测记录。服务端会在每次 4h K 线收线后自动检测。</div>';
           return;
         }
-        const rows = alerts
-          .map((a) => {
-            const sym = Ts12VolumeAlerts.formatSymbolDisplay(a.exchangeSymbol);
-            const cond = Ts12VolumeAlerts.formatConditionType(a.conditionType);
-            const ratio = Ts12VolumeAlerts.formatRatio(a.ratio);
-            const batchAt = formatTime(
-              (a.triggerCandleOpenTime || a.candleOpenTime) + Ts12VolumeAlerts.FOUR_H_MS - 1
-            );
-            const closeAt = formatTime(a.candleCloseTime);
-            const recorded = formatTime(a.createdAt || a.candleCloseTime);
-            return `<tr>
-              <td data-label="币种" class="sym">${sym}</td>
-              <td data-label="条件"><span class="tag">${cond}</span></td>
-              <td data-label="倍数" class="ratio">${ratio}</td>
-              <td data-label="成交量">${formatVolume(a.volume)}</td>
-              <td data-label="30均量">${formatVolume(a.avgVolume)}</td>
-              <td data-label="检测批次">${batchAt}</td>
-              <td data-label="记录时间">${recorded}</td>
-            </tr>`;
+        batchWrapEl.innerHTML = batches
+          .map((batch) => {
+            const closeAt = batchCloseLabel(batch.triggerCandleOpenTime);
+            const scannedAt = batch.scannedAt ? formatTime(batch.scannedAt) : "--";
+            const count = batch.alertCount ?? (batch.alerts?.length || 0);
+            const countCls = count > 0 ? "batch-count" : "batch-count zero";
+            const countText = count > 0 ? `${count} 条预警` : "0 条 · 无异常";
+            const alerts = batch.alerts || [];
+            const table =
+              alerts.length > 0
+                ? `<table>
+              <thead><tr>
+                <th>币种</th><th>条件</th><th>倍数</th><th>成交量</th><th>30均量</th>
+              </tr></thead>
+              <tbody>${alerts
+                .map(
+                  (a) => `<tr>
+                <td class="sym">${Ts12VolumeAlerts.formatSymbolDisplay(a.exchangeSymbol)}</td>
+                <td><span class="tag">${Ts12VolumeAlerts.formatConditionType(a.conditionType)}</span></td>
+                <td class="ratio">${Ts12VolumeAlerts.formatRatio(a.ratio)}</td>
+                <td>${formatVolume(a.volume)}</td>
+                <td>${formatVolume(a.avgVolume)}</td>
+              </tr>`
+                )
+                .join("")}</tbody></table>`
+                : `<div class="batch-empty">本批次已检测，无币种达到预警条件</div>`;
+            return `<section class="batch">
+              <div class="batch-head">
+                <span class="batch-time">${closeAt} 收线</span>
+                <span class="batch-meta">扫描 ${batch.symbolCount ?? "--"} 个 · 记录 ${scannedAt}</span>
+                <span class="${countCls}">${countText}</span>
+              </div>
+              ${table}
+            </section>`;
           })
           .join("");
-        tableWrapEl.innerHTML = `<table>
-          <thead>
-            <tr>
-              <th>币种</th>
-              <th>条件</th>
-              <th>倍数</th>
-              <th>成交量</th>
-              <th>30 均量</th>
-              <th>检测批次</th>
-              <th>记录时间</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>`;
       }
 
       function updateFooter() {
-        pageInfoEl.textContent = total ? `已加载 ${alerts.length} / ${total} 条` : "";
-        loadMoreBtn.disabled = loading || alerts.length >= total;
+        pageInfoEl.textContent = total ? `已加载 ${batches.length} / ${total} 个批次` : "";
+        loadMoreBtn.disabled = loading || batches.length >= total;
       }
 
       async function fetchPage(reset = false) {
@@ -265,20 +284,20 @@
         try {
           if (reset) {
             offset = 0;
-            alerts = [];
+            batches = [];
           }
           let batch = [];
           let nextTotal = total;
           if (Ts12Api?.isEnabled?.()) {
-            const res = await Ts12Api.getVolumeAlerts({ limit: PAGE_SIZE, offset });
-            batch = Array.isArray(res?.alerts) ? res.alerts : [];
+            const res = await Ts12Api.getVolumeAlertHistory({ limit: PAGE_SIZE, offset });
+            batch = Array.isArray(res?.batches) ? res.batches : [];
             nextTotal = Number(res?.total) || batch.length;
           }
-          alerts = reset ? batch : alerts.concat(batch);
+          batches = reset ? batch : batches.concat(batch);
           total = nextTotal;
-          offset = alerts.length;
-          statusEl.textContent = alerts.length ? `共 ${total} 条历史预警` : "暂无预警记录";
-          renderTable();
+          offset = batches.length;
+          statusEl.textContent = batches.length ? `共 ${total} 个检测批次` : "暂无检测记录";
+          renderBatches();
         } catch (err) {
           statusEl.textContent =
             err?.status === 404

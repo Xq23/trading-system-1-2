@@ -292,6 +292,35 @@ export function listVolumeAlerts({ limit = 100, offset = 0 } = {}) {
   return { alerts: rows, total, limit: safeLimit, offset: safeOffset };
 }
 
+export function clearAllVolumeAlerts() {
+  db.prepare(`DELETE FROM volume_alerts`).run();
+  db.prepare(`DELETE FROM volume_alert_scan_log`).run();
+  db.prepare(`DELETE FROM system_meta WHERE key = 'volume_alert_last_trigger'`).run();
+}
+
+export function listVolumeAlertHistory({ limit = 30, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 100);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  const scans = db
+    .prepare(
+      `SELECT trigger_candle_open_time AS triggerCandleOpenTime,
+              scanned_at AS scannedAt,
+              symbol_count AS symbolCount,
+              alert_count AS alertCount,
+              inserted_count AS insertedCount
+       FROM volume_alert_scan_log
+       ORDER BY trigger_candle_open_time DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(safeLimit, safeOffset);
+  const total = db.prepare(`SELECT COUNT(*) AS count FROM volume_alert_scan_log`).get()?.count || 0;
+  const batches = scans.map((scan) => ({
+    ...scan,
+    alerts: listVolumeAlertsByTrigger(scan.triggerCandleOpenTime),
+  }));
+  return { batches, total, limit: safeLimit, offset: safeOffset };
+}
+
 export function insertVolumeAlerts(alerts, createdAt = Date.now()) {
   const stmt = db.prepare(
     `INSERT OR IGNORE INTO volume_alerts

@@ -93,6 +93,24 @@
     return apiFetch("/api/volume-alerts/latest");
   }
 
+  async function getVolumeAlertHistory({ limit = 30, offset = 0 } = {}) {
+    const q = new URLSearchParams();
+    q.set("limit", String(limit));
+    q.set("offset", String(offset));
+    return apiFetch(`/api/volume-alerts/history?${q.toString()}`);
+  }
+
+  async function clearVolumeAlerts() {
+    return apiFetch("/api/volume-alerts", { method: "DELETE" });
+  }
+
+  async function backtestVolumeAlertsToday({ clearFirst = false, force = true } = {}) {
+    return apiFetch("/api/volume-alerts/backtest", {
+      method: "POST",
+      body: JSON.stringify({ today: true, clearFirst, force, timeZone: "Asia/Shanghai" }),
+    });
+  }
+
   async function postVolumeAlertsBatch(alerts) {
     return apiFetch("/api/volume-alerts/batch", {
       method: "POST",
@@ -112,6 +130,9 @@
     deleteBreakScan,
     getVolumeAlerts,
     getVolumeAlertsLatest,
+    getVolumeAlertHistory,
+    clearVolumeAlerts,
+    backtestVolumeAlertsToday,
     postVolumeAlertsBatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

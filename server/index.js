@@ -3,6 +3,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import {
+  clearAllVolumeAlerts,
   clearBreakScan,
   createUser,
   findUserById,
@@ -10,6 +11,7 @@ import {
   getUserSync,
   insertVolumeAlerts,
   listLatestVolumeAlertBatch,
+  listVolumeAlertHistory,
   listVolumeAlerts,
   upsertBreakScan,
   upsertPrefs,
@@ -17,6 +19,7 @@ import {
 import {
   startVolumeAlertScheduler,
   runVolumeAlertBacktest,
+  runVolumeAlertBacktestToday,
   runVolumeAlertScanTriggers,
   isVolumeAlertScanning,
 } from "./volume-alert-scanner.js";
@@ -221,6 +224,21 @@ app.get("/api/volume-alerts/latest", authMiddleware, (_req, res) => {
   res.json(listLatestVolumeAlertBatch());
 });
 
+app.get("/api/volume-alerts/history", authMiddleware, (req, res) => {
+  const limit = req.query?.limit;
+  const offset = req.query?.offset;
+  res.json(listVolumeAlertHistory({ limit, offset }));
+});
+
+app.delete("/api/volume-alerts", authMiddleware, (_req, res) => {
+  if (isVolumeAlertScanning()) {
+    res.status(409).json({ error: "扫描进行中，请稍后再清空" });
+    return;
+  }
+  clearAllVolumeAlerts();
+  res.json({ ok: true });
+});
+
 app.post("/api/volume-alerts/batch", authMiddleware, (req, res) => {
   const alerts = req.body?.alerts;
   if (!Array.isArray(alerts)) {
@@ -234,9 +252,29 @@ app.post("/api/volume-alerts/batch", authMiddleware, (req, res) => {
 app.post("/api/volume-alerts/backtest", authMiddleware, (req, res) => {
   const periods = Number(req.body?.periods) || 2;
   const force = Boolean(req.body?.force);
+  const clearFirst = Boolean(req.body?.clearFirst);
+  const today = Boolean(req.body?.today);
+  const timeZone = String(req.body?.timeZone || "Asia/Shanghai");
   const triggerOpenTimes = req.body?.triggerOpenTimes ?? req.body?.triggerOpenTime;
   if (isVolumeAlertScanning()) {
     res.status(409).json({ error: "已有扫描任务进行中，请稍后再试" });
+    return;
+  }
+  if (clearFirst) clearAllVolumeAlerts();
+  if (today) {
+    res.json({
+      ok: true,
+      message: clearFirst
+        ? "已清空历史，正在重跑今天所有已收线 4h 批次…"
+        : "已开始重跑今天所有已收线 4h 批次…",
+      today: true,
+      force,
+      clearFirst,
+      timeZone,
+    });
+    void runVolumeAlertBacktestToday({ force: true, timeZone }).catch((err) => {
+      console.error("[volume-alert] 今日回测失败", err);
+    });
     return;
   }
   if (triggerOpenTimes != null) {

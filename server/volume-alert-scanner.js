@@ -6,9 +6,11 @@ import {
   getLatestClosed4hOpenTime,
   getNext4hCloseMs,
   listPendingTriggerTimes,
+  listTodayClosedTriggers,
   makeSymbolKey,
 } from "./volume-alert-engine.js";
 import {
+  clearAllVolumeAlerts,
   getSystemMeta,
   insertVolumeAlerts,
   isVolumeAlertScanDone,
@@ -282,4 +284,11 @@ export async function runVolumeAlertBacktest({ periods = 2, force = false } = {}
   } finally {
     scanning = false;
   }
+}
+
+/** 回测指定时区「今天」所有已收线 4h 批次 */
+export async function runVolumeAlertBacktestToday({ force = true, timeZone = "Asia/Shanghai" } = {}) {
+  const triggers = listTodayClosedTriggers(timeZone);
+  if (!triggers.length) throw new Error("今天暂无已收线的 4h K 线");
+  return runVolumeAlertScanTriggers(triggers, { force });
 }

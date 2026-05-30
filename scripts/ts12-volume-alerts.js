@@ -259,20 +259,35 @@
     return found;
   }
 
-  /** 在浏览器扫描今天所有已收线批次，并上传至服务端（含 0 条批次） */
-  async function runTodayScanInBrowser({ clearFirst = false, onProgress } = {}) {
+  /** 相对已扫描批次，找出最近 7 根内尚未入库的 4h 批次 */
+  function listMissingClosedTriggers(scannedOpenTimes, now = Date.now()) {
+    const scanned = new Set(
+      (Array.isArray(scannedOpenTimes) ? scannedOpenTimes : [])
+        .map(Number)
+        .filter(Number.isFinite)
+    );
+    const latest = getLatestClosed4hOpenTime(now);
+    const missing = [];
+    for (let t = latest; t >= latest - 6 * FOUR_H_MS; t -= FOUR_H_MS) {
+      if (!scanned.has(t)) missing.push(t);
+    }
+    return missing.sort((a, b) => a - b);
+  }
+
+  async function listMissingClosedTriggersFromApi() {
+    if (!global.Ts12Api?.getVolumeAlertHistory) return listMissingClosedTriggers([]);
+    const res = await global.Ts12Api.getVolumeAlertHistory({ limit: 100, offset: 0 });
+    const scanned = (res?.batches || []).map((b) => b.triggerCandleOpenTime);
+    return listMissingClosedTriggers(scanned);
+  }
+
+  async function runTriggersScanInBrowser(triggers, { onProgress } = {}) {
     if (!global.Ts12Api?.isEnabled?.()) throw new Error("云端 API 未启用");
     if (!global.Ts12BinanceFutures?.fetchExchangeInfo) {
       throw new Error("缺少币安合约模块");
     }
-
-    const triggers = listTodayClosedTriggers();
-    if (!triggers.length) throw new Error("今天暂无已收线的 4h K 线");
-
-    if (clearFirst) {
-      if (onProgress) onProgress({ phase: "clearing" });
-      await global.Ts12Api.clearVolumeAlerts();
-    }
+    const list = [...triggers].filter(Number.isFinite).sort((a, b) => a - b);
+    if (!list.length) throw new Error("没有需要补扫的批次");
 
     if (onProgress) onProgress({ phase: "fetching_symbols" });
     const info = await global.Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
@@ -281,13 +296,13 @@
     if (!symbols.length) throw new Error("无可用 USDT 永续列表");
 
     const results = [];
-    for (let i = 0; i < triggers.length; i += 1) {
-      const triggerOpenTime = triggers[i];
+    for (let i = 0; i < list.length; i += 1) {
+      const triggerOpenTime = list[i];
       if (onProgress) {
         onProgress({
           phase: "scanning_batch",
           triggerIndex: i + 1,
-          triggerTotal: triggers.length,
+          triggerTotal: list.length,
           triggerOpenTime,
           symbolIndex: 0,
           symbolTotal: symbols.length,
@@ -298,7 +313,7 @@
           onProgress({
             phase: "scanning_symbols",
             triggerIndex: i + 1,
-            triggerTotal: triggers.length,
+            triggerTotal: list.length,
             triggerOpenTime,
             symbolIndex: p.symbolIndex,
             symbolTotal: p.symbolTotal,
@@ -318,7 +333,27 @@
       results.push({ triggerOpenTime, alertCount: alerts.length });
     }
 
-    return { triggers, symbolCount: symbols.length, results };
+    return { triggers: list, symbolCount: symbols.length, results };
+  }
+
+  /** 在浏览器扫描今天所有已收线批次，并上传至服务端（含 0 条批次） */
+  async function runTodayScanInBrowser({ clearFirst = false, onProgress } = {}) {
+    const triggers = listTodayClosedTriggers();
+    if (!triggers.length) throw new Error("今天暂无已收线的 4h K 线");
+
+    if (clearFirst) {
+      if (onProgress) onProgress({ phase: "clearing" });
+      await global.Ts12Api.clearVolumeAlerts();
+    }
+
+    return runTriggersScanInBrowser(triggers, { onProgress });
+  }
+
+  /** 补扫历史里缺失的 4h 批次（不清空已有记录） */
+  async function runMissingScanInBrowser({ onProgress } = {}) {
+    const triggers = await listMissingClosedTriggersFromApi();
+    if (!triggers.length) throw new Error("没有遗漏批次，已是最新");
+    return runTriggersScanInBrowser(triggers, { onProgress });
   }
 
   async function loadLatestBatch() {
@@ -347,10 +382,13 @@
     formatAggregatedAvgVolumes,
     formatAggregatedChipText,
     formatAlertTime,
+    getLatestClosed4hOpenTime,
     getNext4hCloseMs,
     listTodayClosedTriggers,
+    listMissingClosedTriggersFromApi,
     evaluateVolumeAlertsForTrigger,
     runTodayScanInBrowser,
+    runMissingScanInBrowser,
     loadLatestBatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

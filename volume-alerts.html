@@ -59,6 +59,17 @@
         opacity: 0.55;
         cursor: not-allowed;
       }
+      .head button#catchup-btn {
+        background: #1a3058;
+        border-color: #4c72ff;
+        color: #dbe6ff;
+      }
+      .head button#catchup-btn:hover:not(:disabled) {
+        background: #243d6e;
+      }
+      .status.hint {
+        color: #ffc971;
+      }
       .panel {
         border: 1px solid #2d3b59;
         border-radius: 10px;
@@ -176,8 +187,9 @@
     <div class="wrap">
       <div class="head">
         <h1>成交量预警历史</h1>
-        <span class="sub">按 4h 收线批次展示 · 含 0 条预警的检测记录 · 「重跑今天」在本页浏览器扫描后上传</span>
+        <span class="sub">服务端自动检测 · 若遗漏可点「补扫遗漏」在本页扫描上传（约 3–5 分钟/批）</span>
         <a href="overview.html">返回概览</a>
+        <button type="button" id="catchup-btn">补扫遗漏</button>
         <button type="button" id="rerun-btn">清空并重跑今天</button>
         <button type="button" id="reload-btn">刷新</button>
       </div>
@@ -205,6 +217,7 @@
       const loadMoreBtn = document.getElementById("load-more-btn");
       const reloadBtn = document.getElementById("reload-btn");
       const rerunBtn = document.getElementById("rerun-btn");
+      const catchupBtn = document.getElementById("catchup-btn");
       let batches = [];
       let total = 0;
       let offset = 0;
@@ -218,7 +231,8 @@
           const parts = [];
           if (st.triggerTotal) parts.push(`批次 ${st.triggerIndex || 0}/${st.triggerTotal}`);
           if (st.symbolTotal) parts.push(`币种 ${st.symbolIndex || 0}/${st.symbolTotal}`);
-          return `本页扫描中 · ${parts.join(" · ")}（全市场约 15–25 分钟，请勿关闭页面）`;
+          const eta = (st.triggerTotal || 1) > 1 ? "15–25 分钟" : "3–5 分钟";
+          return `本页扫描中 · ${parts.join(" · ")}（约 ${eta}，请勿关闭页面）`;
         }
         if (st.phase === "done") return "扫描完成，正在刷新列表…";
         return "";
@@ -324,7 +338,10 @@
           batches = reset ? batch : batches.concat(batch);
           total = nextTotal;
           offset = batches.length;
-          statusEl.textContent = batches.length ? `共 ${total} 个检测批次` : "暂无检测记录";
+          await updateCatchupHint();
+          if (!statusEl.classList.contains("hint") && !statusEl.classList.contains("error")) {
+            statusEl.textContent = batches.length ? `共 ${total} 个检测批次` : "暂无检测记录";
+          }
           renderBatches();
         } catch (err) {
           statusEl.textContent =
@@ -339,8 +356,57 @@
         }
       }
 
+      async function updateCatchupHint() {
+        if (!Ts12VolumeAlerts?.listMissingClosedTriggersFromApi) return;
+        try {
+          const missing = await Ts12VolumeAlerts.listMissingClosedTriggersFromApi();
+          if (!missing.length) {
+            catchupBtn.disabled = false;
+            return;
+          }
+          const closeAt = formatTime(
+            missing[missing.length - 1] + Ts12VolumeAlerts.FOUR_H_MS - 1
+          );
+          statusEl.textContent = `有 ${missing.length} 个批次未检测（最新遗漏：${closeAt} 收线）· 可点「补扫遗漏」`;
+          statusEl.classList.add("hint");
+          statusEl.classList.remove("error");
+        } catch {
+          /* ignore */
+        }
+      }
+
+      async function runBrowserScan(runFn) {
+        catchupBtn.disabled = true;
+        rerunBtn.disabled = true;
+        reloadBtn.disabled = true;
+        statusEl.classList.remove("error", "hint");
+        statusEl.textContent = "准备扫描…";
+        try {
+          await runFn({
+            onProgress(st) {
+              const msg = formatScanStatus(st);
+              if (msg) statusEl.textContent = msg;
+            },
+          });
+          statusEl.textContent = "扫描完成";
+          statusEl.classList.remove("hint");
+          await fetchPage(true);
+        } catch (err) {
+          statusEl.textContent = String(err?.message || err);
+          statusEl.classList.add("error");
+          statusEl.classList.remove("hint");
+        } finally {
+          catchupBtn.disabled = false;
+          rerunBtn.disabled = false;
+          reloadBtn.disabled = false;
+        }
+      }
+
       reloadBtn.addEventListener("click", () => fetchPage(true));
       loadMoreBtn.addEventListener("click", () => fetchPage(false));
+      catchupBtn.addEventListener("click", () => {
+        void runBrowserScan((opts) => Ts12VolumeAlerts.runMissingScanInBrowser(opts));
+      });
       rerunBtn.addEventListener("click", async () => {
         if (
           !window.confirm(
@@ -349,27 +415,9 @@
         ) {
           return;
         }
-        rerunBtn.disabled = true;
-        reloadBtn.disabled = true;
-        statusEl.classList.remove("error");
-        statusEl.textContent = "准备扫描…";
-        try {
-          await Ts12VolumeAlerts.runTodayScanInBrowser({
-            clearFirst: true,
-            onProgress(st) {
-              const msg = formatScanStatus(st);
-              if (msg) statusEl.textContent = msg;
-            },
-          });
-          statusEl.textContent = "扫描完成";
-          await fetchPage(true);
-        } catch (err) {
-          statusEl.textContent = String(err?.message || err);
-          statusEl.classList.add("error");
-        } finally {
-          rerunBtn.disabled = false;
-          reloadBtn.disabled = false;
-        }
+        await runBrowserScan((opts) =>
+          Ts12VolumeAlerts.runTodayScanInBrowser({ clearFirst: true, ...opts })
+        );
       });
       fetchPage(true);
     </script>

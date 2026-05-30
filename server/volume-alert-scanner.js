@@ -23,8 +23,8 @@ const SCAN_CONCURRENCY = 5;
 const SYMBOL_GAP_MS = 50;
 const CHECK_INTERVAL_MS = 60_000;
 const MAX_BACKFILL_TRIGGERS = 42;
-const REQUEST_TIMEOUT_MS = 12_000;
-const MAX_RETRIES = 2;
+const REQUEST_TIMEOUT_MS = 20_000;
+const MAX_RETRIES = 4;
 const EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo";
 
 let scanning = false;
@@ -63,14 +63,23 @@ async function listUsdtPerpetualSymbols() {
   if (symbolCache.symbols.length && now - symbolCache.fetchedAt < 6 * 60 * 60 * 1000) {
     return symbolCache.symbols;
   }
-  const info = await fetchJson(EXCHANGE_INFO_URL);
-  const symbols = (info?.symbols || [])
-    .filter(isTradableUsdtPerpetual)
-    .map((item) => String(item.symbol).toUpperCase())
-    .filter((sym) => sym.endsWith("USDT"))
-    .sort((a, b) => a.localeCompare(b));
-  symbolCache = { symbols, fetchedAt: now };
-  return symbols;
+  let lastError = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      const info = await fetchJson(EXCHANGE_INFO_URL);
+      const symbols = (info?.symbols || [])
+        .filter(isTradableUsdtPerpetual)
+        .map((item) => String(item.symbol).toUpperCase())
+        .filter((sym) => sym.endsWith("USDT"))
+        .sort((a, b) => a.localeCompare(b));
+      symbolCache = { symbols, fetchedAt: now };
+      return symbols;
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_RETRIES) await sleep(800 * 2 ** attempt);
+    }
+  }
+  throw lastError || new Error("获取合约列表失败");
 }
 
 async function fetch4hKlines(exchangeSymbol) {
@@ -201,8 +210,8 @@ export async function runVolumeAlertScanTriggers(triggerOpenTimes, { force = fal
     .map(Number)
     .filter(Number.isFinite))].sort((a, b) => a - b);
   if (!triggers.length) throw new Error("triggerOpenTime 无效");
+  if (scanning) throw new Error("扫描任务进行中");
 
-  while (scanning) await sleep(1000);
   scanning = true;
   try {
     const symbols = await listUsdtPerpetualSymbols();

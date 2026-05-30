@@ -147,6 +147,11 @@
         background: rgba(255, 179, 71, 0.15);
         color: #ffc971;
       }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
       .ratio {
         color: #ffb347;
         font-weight: 600;
@@ -252,24 +257,30 @@
           .map((batch) => {
             const closeAt = batchCloseLabel(batch.triggerCandleOpenTime);
             const scannedAt = batch.scannedAt ? formatTime(batch.scannedAt) : "--";
-            const count = batch.alertCount ?? (batch.alerts?.length || 0);
+            const alerts = batch.alerts || [];
+            const aggregated = Ts12VolumeAlerts.aggregateAlertsBySymbol(alerts);
+            const count = aggregated.length;
             const countCls = count > 0 ? "batch-count" : "batch-count zero";
             const countText = count > 0 ? `${count} 条预警` : "0 条 · 无异常";
-            const alerts = batch.alerts || [];
             const table =
-              alerts.length > 0
+              count > 0
                 ? `<table>
               <thead><tr>
                 <th>币种</th><th>条件</th><th>倍数</th><th>成交量</th><th>30均量</th>
               </tr></thead>
-              <tbody>${alerts
+              <tbody>${aggregated
                 .map(
                   (a) => `<tr>
                 <td class="sym">${Ts12VolumeAlerts.formatSymbolDisplay(a.exchangeSymbol)}</td>
-                <td><span class="tag">${Ts12VolumeAlerts.formatConditionType(a.conditionType)}</span></td>
-                <td class="ratio">${Ts12VolumeAlerts.formatRatio(a.ratio)}</td>
+                <td><div class="tags">${a.conditions
+                  .map(
+                    (c) =>
+                      `<span class="tag">${Ts12VolumeAlerts.formatConditionType(c.conditionType)}</span>`
+                  )
+                  .join("")}</div></td>
+                <td class="ratio">${Ts12VolumeAlerts.formatAggregatedRatios(a)}</td>
                 <td>${formatVolume(a.volume)}</td>
-                <td>${formatVolume(a.avgVolume)}</td>
+                <td>${Ts12VolumeAlerts.formatAggregatedAvgVolumes(a, formatVolume)}</td>
               </tr>`
                 )
                 .join("")}</tbody></table>`

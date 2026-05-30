@@ -43,6 +43,56 @@
     return `${n.toFixed(1)}×`;
   }
 
+  /** 同一批次内按币种聚合（双条件合并为一行） */
+  function aggregateAlertsBySymbol(alerts) {
+    const map = new Map();
+    for (const alert of alerts || []) {
+      const key = makeSymbolKey(alert.exchangeSymbol);
+      if (!key) continue;
+      if (!map.has(key)) {
+        map.set(key, {
+          exchangeSymbol: key,
+          conditions: [],
+          volume: Number(alert.volume) || 0,
+          maxRatio: 0,
+          candleCloseTime: alert.candleCloseTime,
+          triggerCandleOpenTime: alert.triggerCandleOpenTime,
+        });
+      }
+      const row = map.get(key);
+      row.conditions.push({
+        conditionType: alert.conditionType,
+        ratio: alert.ratio,
+        avgVolume: alert.avgVolume,
+      });
+      row.maxRatio = Math.max(row.maxRatio, Number(alert.ratio) || 0);
+      row.volume = Math.max(row.volume, Number(alert.volume) || 0);
+      row.candleCloseTime = alert.candleCloseTime ?? row.candleCloseTime;
+    }
+    return [...map.values()].sort((a, b) => b.maxRatio - a.maxRatio);
+  }
+
+  function formatAggregatedConditions(aggregated) {
+    return (aggregated?.conditions || [])
+      .map((c) => formatConditionType(c.conditionType))
+      .join(" · ");
+  }
+
+  function formatAggregatedRatios(aggregated) {
+    return (aggregated?.conditions || []).map((c) => formatRatio(c.ratio)).join(" · ");
+  }
+
+  function formatAggregatedAvgVolumes(aggregated, formatVolume) {
+    const fmt = formatVolume || ((v) => String(v));
+    return (aggregated?.conditions || []).map((c) => fmt(c.avgVolume)).join(" · ");
+  }
+
+  function formatAggregatedChipText(aggregated) {
+    return (aggregated?.conditions || [])
+      .map((c) => `${formatConditionType(c.conditionType)} ${formatRatio(c.ratio)}`)
+      .join(" · ");
+  }
+
   function formatAlertTime(ms) {
     const d = new Date(ms);
     const y = d.getFullYear();
@@ -291,6 +341,11 @@
     formatSymbolDisplay,
     formatConditionType,
     formatRatio,
+    aggregateAlertsBySymbol,
+    formatAggregatedConditions,
+    formatAggregatedRatios,
+    formatAggregatedAvgVolumes,
+    formatAggregatedChipText,
     formatAlertTime,
     getNext4hCloseMs,
     listTodayClosedTriggers,

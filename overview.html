@@ -2075,8 +2075,9 @@
       function renderVolumeAlertResults() {
         if (!volumeAlertResultsEl) return;
         volumeAlertResultsEl.innerHTML = "";
-        volumeAlertResultsEl.classList.toggle("empty", !volumeAlertCache.length);
-        for (const alert of volumeAlertCache.slice(0, 12)) {
+        const aggregated = Ts12VolumeAlerts.aggregateAlertsBySymbol(volumeAlertCache);
+        volumeAlertResultsEl.classList.toggle("empty", !aggregated.length);
+        for (const alert of aggregated.slice(0, 12)) {
           const chip = document.createElement("button");
           chip.type = "button";
           chip.className = "volume-alert-chip";
@@ -2084,7 +2085,7 @@
           chip.appendChild(document.createTextNode(label));
           const tag = document.createElement("span");
           tag.className = "va-tag";
-          tag.textContent = `${Ts12VolumeAlerts.formatConditionType(alert.conditionType)} ${Ts12VolumeAlerts.formatRatio(alert.ratio)}`;
+          tag.textContent = Ts12VolumeAlerts.formatAggregatedChipText(alert);
           chip.appendChild(tag);
           chip.title = `${alert.exchangeSymbol} · ${Ts12VolumeAlerts.formatAlertTime(alert.candleCloseTime)} · 单击预览 · 双击加入`;
           let clickTimer = null;
@@ -2117,7 +2118,7 @@
           const t = Ts12VolumeAlerts.formatAlertTime(
             volumeAlertScanMeta.triggerCandleOpenTime + Ts12VolumeAlerts.FOUR_H_MS - 1
           );
-          const count = volumeAlertCache.length;
+          const count = Ts12VolumeAlerts.aggregateAlertsBySymbol(volumeAlertCache).length;
           volumeAlertStatusEl.textContent = count
             ? `最近检测 ${t} · ${count} 个异常`
             : `最近检测 ${t} · 无异常`;

@@ -173,6 +173,7 @@
         <h1>成交量预警历史</h1>
         <span class="sub">按 4h 收线批次展示 · 含 0 条预警的检测记录 · 服务端自动检测</span>
         <a href="overview.html">返回概览</a>
+        <button type="button" id="rerun-btn">清空并重跑今天</button>
         <button type="button" id="reload-btn">刷新</button>
       </div>
       <div class="panel">
@@ -197,10 +198,60 @@
       const pageInfoEl = document.getElementById("page-info");
       const loadMoreBtn = document.getElementById("load-more-btn");
       const reloadBtn = document.getElementById("reload-btn");
+      const rerunBtn = document.getElementById("rerun-btn");
       let batches = [];
       let total = 0;
       let offset = 0;
       let loading = false;
+      let pollTimer = null;
+
+      function formatScanStatus(st) {
+        if (!st?.scanning) {
+          if (st?.lastError) return `上次扫描失败：${st.lastError}`;
+          return "";
+        }
+        const parts = [];
+        if (st.triggerTotal) parts.push(`批次 ${st.triggerIndex || 0}/${st.triggerTotal}`);
+        if (st.symbolTotal) parts.push(`币种 ${st.symbolIndex || 0}/${st.symbolTotal}`);
+        const phase =
+          st.phase === "fetching_symbols"
+            ? "拉取合约列表"
+            : st.phase === "scanning_symbols"
+              ? "扫描中"
+              : "准备中";
+        return `后台扫描中 · ${phase}${parts.length ? " · " + parts.join(" · ") : ""}（全市场约 15–25 分钟）`;
+      }
+
+      function stopPoll() {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      async function pollScanStatus() {
+        if (!Ts12Api?.getVolumeAlertScanStatus) return;
+        try {
+          const st = await Ts12Api.getVolumeAlertScanStatus();
+          const msg = formatScanStatus(st);
+          if (msg) statusEl.textContent = msg;
+          if (!st?.scanning) {
+            stopPoll();
+            rerunBtn.disabled = false;
+            await fetchPage(true);
+          }
+        } catch {
+          /* ignore poll errors */
+        }
+      }
+
+      function startPoll() {
+        stopPoll();
+        pollTimer = setInterval(() => {
+          void pollScanStatus();
+        }, 5000);
+        void pollScanStatus();
+      }
 
       function formatTime(ms) {
         const d = new Date(ms);
@@ -313,6 +364,20 @@
 
       reloadBtn.addEventListener("click", () => fetchPage(true));
       loadMoreBtn.addEventListener("click", () => fetchPage(false));
+      rerunBtn.addEventListener("click", async () => {
+        if (!window.confirm("确定清空全部历史，并重新扫描今天所有已收线 4h 批次？约需 15–25 分钟。")) return;
+        rerunBtn.disabled = true;
+        statusEl.classList.remove("error");
+        statusEl.textContent = "已提交任务，正在清空并重跑…";
+        try {
+          await Ts12Api.backtestVolumeAlertsToday({ clearFirst: true, force: true });
+          startPoll();
+        } catch (err) {
+          statusEl.textContent = String(err?.message || err);
+          statusEl.classList.add("error");
+          rerunBtn.disabled = false;
+        }
+      });
       fetchPage(true);
     </script>
   </body>

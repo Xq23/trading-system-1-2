@@ -111,6 +111,10 @@
     });
   }
 
+  async function getVolumeAlertScanStatus() {
+    return apiFetch("/api/volume-alerts/status");
+  }
+
   async function postVolumeAlertsBatch(alerts) {
     return apiFetch("/api/volume-alerts/batch", {
       method: "POST",
@@ -133,6 +137,7 @@
     getVolumeAlertHistory,
     clearVolumeAlerts,
     backtestVolumeAlertsToday,
+    getVolumeAlertScanStatus,
     postVolumeAlertsBatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -22,6 +22,7 @@ import {
   runVolumeAlertBacktestToday,
   runVolumeAlertScanTriggers,
   isVolumeAlertScanning,
+  getVolumeAlertScanStatus,
 } from "./volume-alert-scanner.js";
 
 const PORT = Number(process.env.PORT) || 8787;
@@ -222,6 +223,10 @@ app.get("/api/volume-alerts", authMiddleware, (req, res) => {
 
 app.get("/api/volume-alerts/latest", authMiddleware, (_req, res) => {
   res.json(listLatestVolumeAlertBatch());
+});
+
+app.get("/api/volume-alerts/status", authMiddleware, (_req, res) => {
+  res.json(getVolumeAlertScanStatus());
 });
 
 app.get("/api/volume-alerts/history", authMiddleware, (req, res) => {

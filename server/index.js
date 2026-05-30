@@ -9,10 +9,12 @@ import {
   findUserByUsername,
   getUserSync,
   insertVolumeAlerts,
+  listLatestVolumeAlertBatch,
   listVolumeAlerts,
   upsertBreakScan,
   upsertPrefs,
 } from "./db.js";
+import { startVolumeAlertScheduler } from "./volume-alert-scanner.js";
 
 const PORT = Number(process.env.PORT) || 8787;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me-in-production";
@@ -210,6 +212,10 @@ app.get("/api/volume-alerts", authMiddleware, (req, res) => {
   res.json(listVolumeAlerts({ limit, offset }));
 });
 
+app.get("/api/volume-alerts/latest", authMiddleware, (_req, res) => {
+  res.json(listLatestVolumeAlertBatch());
+});
+
 app.post("/api/volume-alerts/batch", authMiddleware, (req, res) => {
   const alerts = req.body?.alerts;
   if (!Array.isArray(alerts)) {
@@ -231,4 +237,5 @@ app.use((err, _req, res, _next) => {
 
 app.listen(PORT, () => {
   console.log(`ts12-api listening on :${PORT}`);
+  startVolumeAlertScheduler();
 });

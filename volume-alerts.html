@@ -158,7 +158,7 @@
     <div class="wrap">
       <div class="head">
         <h1>成交量预警历史</h1>
-        <span class="sub">4h 收线 · 单根≥10× 或 连续 2 根≥5×（相对近 30 根均量）</span>
+        <span class="sub">服务端每 4h 收线自动检测 · 单根≥10× 或 连续 2 根≥5×（相对近 30 根均量）</span>
         <a href="overview.html">返回概览</a>
         <button type="button" id="reload-btn">刷新</button>
       </div>
@@ -210,7 +210,7 @@
 
       function renderTable() {
         if (!alerts.length) {
-          tableWrapEl.innerHTML = '<div class="empty">暂无预警记录。概览页在每次 4h K 线收线后会自动检测并写入历史。</div>';
+          tableWrapEl.innerHTML = '<div class="empty">暂无预警记录。服务端会在每次 4h K 线收线后自动检测，无需打开概览页。</div>';
           return;
         }
         const rows = alerts
@@ -218,6 +218,9 @@
             const sym = Ts12VolumeAlerts.formatSymbolDisplay(a.exchangeSymbol);
             const cond = Ts12VolumeAlerts.formatConditionType(a.conditionType);
             const ratio = Ts12VolumeAlerts.formatRatio(a.ratio);
+            const batchAt = formatTime(
+              (a.triggerCandleOpenTime || a.candleOpenTime) + Ts12VolumeAlerts.FOUR_H_MS - 1
+            );
             const closeAt = formatTime(a.candleCloseTime);
             const recorded = formatTime(a.createdAt || a.candleCloseTime);
             return `<tr>
@@ -226,7 +229,7 @@
               <td data-label="倍数" class="ratio">${ratio}</td>
               <td data-label="成交量">${formatVolume(a.volume)}</td>
               <td data-label="30均量">${formatVolume(a.avgVolume)}</td>
-              <td data-label="K线收线">${closeAt}</td>
+              <td data-label="检测批次">${batchAt}</td>
               <td data-label="记录时间">${recorded}</td>
             </tr>`;
           })
@@ -239,7 +242,7 @@
               <th>倍数</th>
               <th>成交量</th>
               <th>30 均量</th>
-              <th>K 线收线</th>
+              <th>检测批次</th>
               <th>记录时间</th>
             </tr>
           </thead>
@@ -270,9 +273,6 @@
             const res = await Ts12Api.getVolumeAlerts({ limit: PAGE_SIZE, offset });
             batch = Array.isArray(res?.alerts) ? res.alerts : [];
             nextTotal = Number(res?.total) || batch.length;
-          } else {
-            batch = Ts12VolumeAlerts.readLocalAlerts().slice(offset, offset + PAGE_SIZE);
-            nextTotal = Ts12VolumeAlerts.readLocalAlerts().length;
           }
           alerts = reset ? batch : alerts.concat(batch);
           total = nextTotal;
@@ -280,16 +280,6 @@
           statusEl.textContent = alerts.length ? `共 ${total} 条历史预警` : "暂无预警记录";
           renderTable();
         } catch (err) {
-          const local = Ts12VolumeAlerts.readLocalAlerts();
-          if (local.length) {
-            const batch = local.slice(reset ? 0 : offset, (reset ? 0 : offset) + PAGE_SIZE);
-            alerts = reset ? batch : alerts.concat(batch);
-            total = local.length;
-            offset = alerts.length;
-            statusEl.textContent = `云端暂不可用，显示本机缓存 ${local.length} 条`;
-            renderTable();
-            return;
-          }
           statusEl.textContent =
             err?.status === 404
               ? "云端接口尚未部署，请在 Railway 重新部署后端后刷新"

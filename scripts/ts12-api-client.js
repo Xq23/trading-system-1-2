@@ -89,6 +89,10 @@
     return apiFetch(`/api/volume-alerts?${q.toString()}`);
   }
 
+  async function getVolumeAlertsLatest() {
+    return apiFetch("/api/volume-alerts/latest");
+  }
+
   async function postVolumeAlertsBatch(alerts) {
     return apiFetch("/api/volume-alerts/batch", {
       method: "POST",
@@ -107,6 +111,7 @@
     putBreakScan,
     deleteBreakScan,
     getVolumeAlerts,
+    getVolumeAlertsLatest,
     postVolumeAlertsBatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

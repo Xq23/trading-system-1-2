@@ -44,7 +44,12 @@
       }
     }
     if (!res.ok) {
-      const err = new Error(body?.error || `请求失败 (${res.status})`);
+      const rawErr = body?.error || text || "";
+      const errMsg =
+        typeof rawErr === "string" && /<!DOCTYPE|<html/i.test(rawErr)
+          ? `请求失败 (${res.status})，请确认后端已部署最新版本`
+          : rawErr || `请求失败 (${res.status})`;
+      const err = new Error(errMsg);
       err.status = res.status;
       throw err;
     }
@@ -77,6 +82,20 @@
     return apiFetch("/api/sync/break-scan", { method: "DELETE" });
   }
 
+  async function getVolumeAlerts({ limit = 100, offset = 0 } = {}) {
+    const q = new URLSearchParams();
+    q.set("limit", String(limit));
+    q.set("offset", String(offset));
+    return apiFetch(`/api/volume-alerts?${q.toString()}`);
+  }
+
+  async function postVolumeAlertsBatch(alerts) {
+    return apiFetch("/api/volume-alerts/batch", {
+      method: "POST",
+      body: JSON.stringify({ alerts }),
+    });
+  }
+
   global.Ts12Api = {
     getApiBase,
     isEnabled,
@@ -87,5 +106,7 @@
     getBreakScan,
     putBreakScan,
     deleteBreakScan,
+    getVolumeAlerts,
+    postVolumeAlertsBatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

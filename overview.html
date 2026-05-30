@@ -210,6 +210,93 @@
         color: #ff9090;
       }
 
+      .volume-alert-panel {
+        flex: 0 0 auto;
+        border: 1px solid #2d3b59;
+        border-radius: 10px;
+        background: #0d1527;
+        padding: 6px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 96px;
+        overflow: hidden;
+      }
+      .volume-alert-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+      }
+      .volume-alert-title {
+        font-weight: 600;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+      .volume-alert-status {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: #9eb0d8;
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .volume-alert-status.error {
+        color: #ff9090;
+      }
+      .volume-alert-link {
+        color: #8eb4ff;
+        font-size: 12px;
+        text-decoration: none;
+        flex-shrink: 0;
+      }
+      .volume-alert-link:hover {
+        text-decoration: underline;
+      }
+      .volume-alert-results {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        min-height: 30px;
+        max-height: 34px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .volume-alert-results.empty::before {
+        content: "每 4h K 线收线后自动检测；单根≥10× 或 连续 2 根≥5×（相对近 30 根均量）";
+        color: #5f739e;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .volume-alert-chip {
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid #3d4f78;
+        background: #162035;
+        color: #dbe6ff;
+        font-size: 11px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .volume-alert-chip:hover {
+        border-color: #ffb347;
+        background: #1f2a45;
+      }
+      .volume-alert-chip .va-tag {
+        margin-left: 5px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: rgba(255, 179, 71, 0.18);
+        color: #ffc971;
+        font-size: 10px;
+      }
+
       .break-filter {
         border: 1px solid #2d3b59;
         border-radius: 10px;
@@ -681,6 +768,14 @@
           </div>
         </div>
       </div>
+      <div class="volume-alert-panel" id="volume-alert-panel">
+        <div class="volume-alert-head">
+          <span class="volume-alert-title">成交量预警</span>
+          <span id="volume-alert-status" class="volume-alert-status">加载中…</span>
+          <a class="volume-alert-link" href="volume-alerts.html">历史记录</a>
+        </div>
+        <div id="volume-alert-results" class="volume-alert-results empty"></div>
+      </div>
       <div id="symbol-editor" class="symbol-editor" hidden>
         <input id="symbol-input" type="text" placeholder="输入 BTCUSDT 或 BTC" autocomplete="off" />
         <button id="add-symbol" type="button">增加</button>
@@ -732,6 +827,7 @@
     <script src="scripts/ts12-auth.js"></script>
     <script src="scripts/ts12-symbol-prefs.js"></script>
     <script src="scripts/ts12-binance-futures.js"></script>
+    <script src="scripts/ts12-volume-alerts.js"></script>
     <script>
       const authSession = Ts12Auth.requireLogin();
       const currentUserId = authSession.userId;
@@ -776,8 +872,13 @@
       const symbolGroupCreateBtnEl = document.getElementById("symbol-group-create-btn");
       const userDisplayEl = document.getElementById("user-display");
       const logoutBtnEl = document.getElementById("logout-btn");
+      const volumeAlertStatusEl = document.getElementById("volume-alert-status");
+      const volumeAlertResultsEl = document.getElementById("volume-alert-results");
       let breakScanCache = null;
       let breakScanRunning = false;
+      let volumeAlertCache = [];
+      let volumeAlertScanning = false;
+      let stopVolumeAlertSchedule = null;
       /** 扫描结果单击预览（未加入币种列表时） */
       let breakScanPreviewExchangeSymbol = null;
       const symbolSelectEl = document.getElementById("symbol-select");
@@ -1423,6 +1524,7 @@
           clearInterval(prefsSyncTimer);
           prefsSyncTimer = null;
         }
+        stopVolumeAlertScheduler();
       }
 
       function startPolling() {
@@ -1962,6 +2064,114 @@
         breakScanStatusEl.classList.remove("error");
       }
 
+      function previewSymbolFromVolumeAlert(alert) {
+        previewSymbolFromBreakScan({ exchangeSymbol: alert.exchangeSymbol });
+      }
+
+      async function addSymbolFromVolumeAlert(alert) {
+        await addSymbolFromBreakScan({ exchangeSymbol: alert.exchangeSymbol });
+      }
+
+      function renderVolumeAlertResults() {
+        if (!volumeAlertResultsEl) return;
+        volumeAlertResultsEl.innerHTML = "";
+        volumeAlertResultsEl.classList.toggle("empty", !volumeAlertCache.length);
+        for (const alert of volumeAlertCache.slice(0, 12)) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "volume-alert-chip";
+          const label = formatSymbolDisplay(alert.exchangeSymbol);
+          chip.appendChild(document.createTextNode(label));
+          const tag = document.createElement("span");
+          tag.className = "va-tag";
+          tag.textContent = `${Ts12VolumeAlerts.formatConditionType(alert.conditionType)} ${Ts12VolumeAlerts.formatRatio(alert.ratio)}`;
+          chip.appendChild(tag);
+          chip.title = `${alert.exchangeSymbol} · ${Ts12VolumeAlerts.formatAlertTime(alert.candleCloseTime)} · 单击预览 · 双击加入`;
+          let clickTimer = null;
+          let skipNextClick = false;
+          chip.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (skipNextClick) {
+              skipNextClick = false;
+              return;
+            }
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => previewSymbolFromVolumeAlert(alert), 250);
+          });
+          chip.addEventListener("dblclick", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clearTimeout(clickTimer);
+            skipNextClick = true;
+            void addSymbolFromVolumeAlert(alert);
+          });
+          volumeAlertResultsEl.appendChild(chip);
+        }
+      }
+
+      function updateVolumeAlertStatus(message, isError = false) {
+        if (!volumeAlertStatusEl) return;
+        if (message) {
+          volumeAlertStatusEl.textContent = message;
+        } else if (volumeAlertScanning) {
+          volumeAlertStatusEl.textContent = "检测中…";
+        } else {
+          const next = new Date(Ts12VolumeAlerts.getNext4hCloseMs());
+          volumeAlertStatusEl.textContent = `下次 4h 收线检测 ${next.toLocaleTimeString()}`;
+        }
+        volumeAlertStatusEl.classList.toggle("error", isError);
+      }
+
+      async function loadVolumeAlertPanel() {
+        volumeAlertCache = await Ts12VolumeAlerts.loadRecentAlerts(12);
+        renderVolumeAlertResults();
+        updateVolumeAlertStatus();
+      }
+
+      async function runVolumeAlertScan() {
+        if (volumeAlertScanning) return;
+        volumeAlertScanning = true;
+        updateVolumeAlertStatus("检测中…");
+        try {
+          const symbols = await listBinanceUsdtPerpetualForScan("all");
+          const { alerts, candleOpenTime } = await Ts12VolumeAlerts.scanSymbolsForVolumeAlerts(symbols, {
+            concurrency: 4,
+            gapMs: 60,
+            onProgress: (done, total) => {
+              volumeAlertStatusEl.textContent = `检测中 ${done}/${total}…`;
+            },
+          });
+          await Ts12VolumeAlerts.persistAlerts(alerts);
+          Ts12VolumeAlerts.markCandleProcessed(candleOpenTime);
+          volumeAlertCache = await Ts12VolumeAlerts.loadRecentAlerts(12);
+          renderVolumeAlertResults();
+          updateVolumeAlertStatus(
+            alerts.length
+              ? `本次发现 ${alerts.length} 个异常放量`
+              : `检测完成，未发现异常（${Ts12VolumeAlerts.formatAlertTime(candleOpenTime + Ts12VolumeAlerts.FOUR_H_MS - 1)}）`
+          );
+        } catch (err) {
+          updateVolumeAlertStatus(String(err?.message || err), true);
+        } finally {
+          volumeAlertScanning = false;
+        }
+      }
+
+      function stopVolumeAlertScheduler() {
+        if (stopVolumeAlertSchedule) {
+          stopVolumeAlertSchedule();
+          stopVolumeAlertSchedule = null;
+        }
+      }
+
+      function startVolumeAlertScheduler() {
+        stopVolumeAlertScheduler();
+        stopVolumeAlertSchedule = Ts12VolumeAlerts.schedule4hScan(() => runVolumeAlertScan());
+        if (Ts12VolumeAlerts.shouldRunCatchUpScan()) {
+          void runVolumeAlertScan();
+        }
+      }
+
       async function scanOneSymbolBreakouts(exchangeSymbol) {
         const dimensions = {};
         for (const dim of BREAK_DIMENSIONS) {
@@ -2360,6 +2570,8 @@
           renderBreakFilterGrid();
           await loadBreakScanCacheFromStorage();
           updateBreakClearBtnState();
+          await loadVolumeAlertPanel();
+          startVolumeAlertScheduler();
           updatePairInfo(NaN);
           loadAll();
           startPolling();
@@ -2452,6 +2664,7 @@
         reloadSymbolPrefsFromCloud().finally(() => {
           loadAll();
           startPolling();
+          startVolumeAlertScheduler();
         });
       });
       bootApp();

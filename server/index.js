@@ -8,6 +8,8 @@ import {
   findUserById,
   findUserByUsername,
   getUserSync,
+  insertVolumeAlerts,
+  listVolumeAlerts,
   upsertBreakScan,
   upsertPrefs,
 } from "./db.js";
@@ -200,6 +202,22 @@ app.delete("/api/sync/break-scan", authMiddleware, (req, res) => {
   const updatedAt = Date.now();
   clearBreakScan(req.user.id, updatedAt);
   res.json({ ok: true, updatedAt });
+});
+
+app.get("/api/volume-alerts", authMiddleware, (req, res) => {
+  const limit = req.query?.limit;
+  const offset = req.query?.offset;
+  res.json(listVolumeAlerts({ limit, offset }));
+});
+
+app.post("/api/volume-alerts/batch", authMiddleware, (req, res) => {
+  const alerts = req.body?.alerts;
+  if (!Array.isArray(alerts)) {
+    res.status(400).json({ error: "alerts 无效" });
+    return;
+  }
+  const inserted = insertVolumeAlerts(alerts, Date.now());
+  res.json({ ok: true, inserted });
 });
 
 app.use((err, _req, res, _next) => {

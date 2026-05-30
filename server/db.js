@@ -23,6 +23,19 @@ db.exec(`
     break_scan_json TEXT,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS volume_alerts (
+    id TEXT PRIMARY KEY,
+    exchange_symbol TEXT NOT NULL,
+    condition_type TEXT NOT NULL,
+    volume REAL NOT NULL,
+    avg_volume REAL NOT NULL,
+    ratio REAL NOT NULL,
+    candle_open_time INTEGER NOT NULL,
+    candle_close_time INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(exchange_symbol, candle_open_time, condition_type)
+  );
+  CREATE INDEX IF NOT EXISTS idx_volume_alerts_created ON volume_alerts(created_at DESC);
 `);
 
 export function findUserByUsername(username) {
@@ -90,6 +103,91 @@ export function clearBreakScan(userId, updatedAt) {
     updatedAt,
     userId
   );
+}
+
+function normalizeVolumeAlert(alert) {
+  const exchangeSymbol = String(alert?.exchangeSymbol || alert?.exchange_symbol || "")
+    .trim()
+    .toUpperCase();
+  const conditionType = String(alert?.conditionType || alert?.condition_type || "").trim();
+  const volume = Number(alert?.volume);
+  const avgVolume = Number(alert?.avgVolume ?? alert?.avg_volume);
+  const ratio = Number(alert?.ratio);
+  const candleOpenTime = Number(alert?.candleOpenTime ?? alert?.candle_open_time);
+  const candleCloseTime = Number(alert?.candleCloseTime ?? alert?.candle_close_time);
+  if (
+    !exchangeSymbol ||
+    !conditionType ||
+    !Number.isFinite(volume) ||
+    !Number.isFinite(avgVolume) ||
+    !Number.isFinite(ratio) ||
+    !Number.isFinite(candleOpenTime) ||
+    !Number.isFinite(candleCloseTime)
+  ) {
+    return null;
+  }
+  return {
+    exchangeSymbol,
+    conditionType,
+    volume,
+    avgVolume,
+    ratio,
+    candleOpenTime,
+    candleCloseTime,
+  };
+}
+
+export function listVolumeAlerts({ limit = 100, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  const rows = db
+    .prepare(
+      `SELECT id,
+              exchange_symbol AS exchangeSymbol,
+              condition_type AS conditionType,
+              volume,
+              avg_volume AS avgVolume,
+              ratio,
+              candle_open_time AS candleOpenTime,
+              candle_close_time AS candleCloseTime,
+              created_at AS createdAt
+       FROM volume_alerts
+       ORDER BY created_at DESC, exchange_symbol ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(safeLimit, safeOffset);
+  const total = db.prepare(`SELECT COUNT(*) AS count FROM volume_alerts`).get()?.count || 0;
+  return { alerts: rows, total, limit: safeLimit, offset: safeOffset };
+}
+
+export function insertVolumeAlerts(alerts, createdAt = Date.now()) {
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO volume_alerts
+      (id, exchange_symbol, condition_type, volume, avg_volume, ratio, candle_open_time, candle_close_time, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  let inserted = 0;
+  const tx = db.transaction((items) => {
+    for (const raw of items) {
+      const alert = normalizeVolumeAlert(raw);
+      if (!alert) continue;
+      const id = `va_${alert.candleOpenTime}_${alert.exchangeSymbol}_${alert.conditionType}`;
+      const info = stmt.run(
+        id,
+        alert.exchangeSymbol,
+        alert.conditionType,
+        alert.volume,
+        alert.avgVolume,
+        alert.ratio,
+        alert.candleOpenTime,
+        alert.candleCloseTime,
+        createdAt
+      );
+      if (info.changes > 0) inserted += 1;
+    }
+  });
+  tx(Array.isArray(alerts) ? alerts : []);
+  return inserted;
 }
 
 export default db;

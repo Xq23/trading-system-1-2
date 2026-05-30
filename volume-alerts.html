@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>成交量预警历史</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b1220;
+        color: #dbe6ff;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 16px 14px 28px;
+      }
+      .head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 14px;
+        margin-bottom: 14px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .sub {
+        flex: 1 1 auto;
+        color: #7f92bd;
+        font-size: 13px;
+      }
+      .head a,
+      .head button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .head a:hover,
+      .head button:hover:not(:disabled) {
+        background: #1d2a45;
+      }
+      .head button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .panel {
+        border: 1px solid #2d3b59;
+        border-radius: 10px;
+        background: #0d1527;
+        overflow: hidden;
+      }
+      .status {
+        padding: 10px 12px;
+        font-size: 13px;
+        color: #9eb0d8;
+        border-bottom: 1px solid #1f2f4e;
+      }
+      .status.error {
+        color: #ff9090;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid #1a2742;
+      }
+      th {
+        color: #9eb0d8;
+        font-weight: 600;
+        background: #111b2f;
+        position: sticky;
+        top: 0;
+      }
+      tr:hover td {
+        background: rgba(36, 58, 110, 0.22);
+      }
+      .sym {
+        font-weight: 600;
+      }
+      .tag {
+        display: inline-block;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        background: rgba(255, 179, 71, 0.15);
+        color: #ffc971;
+      }
+      .ratio {
+        color: #ffb347;
+        font-weight: 600;
+      }
+      .empty {
+        padding: 28px 12px;
+        text-align: center;
+        color: #5f739e;
+        font-size: 13px;
+      }
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-top: 1px solid #1f2f4e;
+      }
+      @media (max-width: 640px) {
+        table,
+        thead,
+        tbody,
+        th,
+        td,
+        tr {
+          display: block;
+        }
+        thead {
+          display: none;
+        }
+        tr {
+          border-bottom: 1px solid #1f2f4e;
+          padding: 8px 0;
+        }
+        td {
+          border: none;
+          padding: 4px 12px;
+        }
+        td::before {
+          content: attr(data-label);
+          display: inline-block;
+          width: 72px;
+          color: #7f92bd;
+          font-size: 11px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head">
+        <h1>成交量预警历史</h1>
+        <span class="sub">4h 收线 · 单根≥10× 或 连续 2 根≥5×（相对近 30 根均量）</span>
+        <a href="overview.html">返回概览</a>
+        <button type="button" id="reload-btn">刷新</button>
+      </div>
+      <div class="panel">
+        <div id="status" class="status">加载中…</div>
+        <div id="table-wrap"></div>
+        <div class="foot">
+          <span id="page-info"></span>
+          <button type="button" id="load-more-btn" disabled>加载更多</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="scripts/ts12-api-config.js"></script>
+    <script src="scripts/ts12-api-client.js"></script>
+    <script src="scripts/ts12-auth.js"></script>
+    <script src="scripts/ts12-volume-alerts.js"></script>
+    <script>
+      Ts12Auth.requireLogin();
+      const PAGE_SIZE = 50;
+      const statusEl = document.getElementById("status");
+      const tableWrapEl = document.getElementById("table-wrap");
+      const pageInfoEl = document.getElementById("page-info");
+      const loadMoreBtn = document.getElementById("load-more-btn");
+      const reloadBtn = document.getElementById("reload-btn");
+      let alerts = [];
+      let total = 0;
+      let offset = 0;
+      let loading = false;
+
+      function formatTime(ms) {
+        const d = new Date(ms);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const h = String(d.getHours()).padStart(2, "0");
+        const min = String(d.getMinutes()).padStart(2, "0");
+        return `${y}-${m}-${day} ${h}:${min}`;
+      }
+
+      function formatVolume(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return "--";
+        if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+        if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+        if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+        return n.toFixed(2);
+      }
+
+      function renderTable() {
+        if (!alerts.length) {
+          tableWrapEl.innerHTML = '<div class="empty">暂无预警记录。概览页在每次 4h K 线收线后会自动检测并写入历史。</div>';
+          return;
+        }
+        const rows = alerts
+          .map((a) => {
+            const sym = Ts12VolumeAlerts.formatSymbolDisplay(a.exchangeSymbol);
+            const cond = Ts12VolumeAlerts.formatConditionType(a.conditionType);
+            const ratio = Ts12VolumeAlerts.formatRatio(a.ratio);
+            const closeAt = formatTime(a.candleCloseTime);
+            const recorded = formatTime(a.createdAt || a.candleCloseTime);
+            return `<tr>
+              <td data-label="币种" class="sym">${sym}</td>
+              <td data-label="条件"><span class="tag">${cond}</span></td>
+              <td data-label="倍数" class="ratio">${ratio}</td>
+              <td data-label="成交量">${formatVolume(a.volume)}</td>
+              <td data-label="30均量">${formatVolume(a.avgVolume)}</td>
+              <td data-label="K线收线">${closeAt}</td>
+              <td data-label="记录时间">${recorded}</td>
+            </tr>`;
+          })
+          .join("");
+        tableWrapEl.innerHTML = `<table>
+          <thead>
+            <tr>
+              <th>币种</th>
+              <th>条件</th>
+              <th>倍数</th>
+              <th>成交量</th>
+              <th>30 均量</th>
+              <th>K 线收线</th>
+              <th>记录时间</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      }
+
+      function updateFooter() {
+        pageInfoEl.textContent = total ? `已加载 ${alerts.length} / ${total} 条` : "";
+        loadMoreBtn.disabled = loading || alerts.length >= total;
+      }
+
+      async function fetchPage(reset = false) {
+        if (loading) return;
+        loading = true;
+        reloadBtn.disabled = true;
+        loadMoreBtn.disabled = true;
+        statusEl.textContent = reset ? "加载中…" : "加载更多…";
+        statusEl.classList.remove("error");
+        try {
+          if (reset) {
+            offset = 0;
+            alerts = [];
+          }
+          let batch = [];
+          let nextTotal = total;
+          if (Ts12Api?.isEnabled?.()) {
+            const res = await Ts12Api.getVolumeAlerts({ limit: PAGE_SIZE, offset });
+            batch = Array.isArray(res?.alerts) ? res.alerts : [];
+            nextTotal = Number(res?.total) || batch.length;
+          } else {
+            batch = Ts12VolumeAlerts.readLocalAlerts().slice(offset, offset + PAGE_SIZE);
+            nextTotal = Ts12VolumeAlerts.readLocalAlerts().length;
+          }
+          alerts = reset ? batch : alerts.concat(batch);
+          total = nextTotal;
+          offset = alerts.length;
+          statusEl.textContent = alerts.length ? `共 ${total} 条历史预警` : "暂无预警记录";
+          renderTable();
+        } catch (err) {
+          const local = Ts12VolumeAlerts.readLocalAlerts();
+          if (local.length) {
+            const batch = local.slice(reset ? 0 : offset, (reset ? 0 : offset) + PAGE_SIZE);
+            alerts = reset ? batch : alerts.concat(batch);
+            total = local.length;
+            offset = alerts.length;
+            statusEl.textContent = `云端暂不可用，显示本机缓存 ${local.length} 条`;
+            renderTable();
+            return;
+          }
+          statusEl.textContent =
+            err?.status === 404
+              ? "云端接口尚未部署，请在 Railway 重新部署后端后刷新"
+              : String(err?.message || err);
+          statusEl.classList.add("error");
+        } finally {
+          loading = false;
+          reloadBtn.disabled = false;
+          updateFooter();
+        }
+      }
+
+      reloadBtn.addEventListener("click", () => fetchPage(true));
+      loadMoreBtn.addEventListener("click", () => fetchPage(false));
+      fetchPage(true);
+    </script>
+  </body>
+</html>

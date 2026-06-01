@@ -267,6 +267,124 @@
         opacity: 0.55;
         cursor: not-allowed;
       }
+      .rich-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .image-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .image-toolbar button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .image-toolbar button:hover {
+        background: #1d2a45;
+      }
+      .image-hint {
+        font-size: 11px;
+        color: #6f84ad;
+      }
+      .image-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-height: 0;
+      }
+      .image-thumb {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #2d3b59;
+        background: #131d33;
+        flex-shrink: 0;
+      }
+      .image-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        cursor: zoom-in;
+      }
+      .image-thumb button {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 18px;
+        height: 18px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.65);
+        color: #fff;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0;
+      }
+      .cell-rich {
+        max-width: 180px;
+      }
+      .cell-rich-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .cell-thumb-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+      }
+      .cell-thumb-row img {
+        width: 28px;
+        height: 28px;
+        object-fit: cover;
+        border-radius: 4px;
+        border: 1px solid #2d3b59;
+        cursor: zoom-in;
+      }
+      .lightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.82);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .lightbox[hidden] {
+        display: none !important;
+      }
+      .lightbox img {
+        max-width: min(96vw, 1200px);
+        max-height: 92vh;
+        border-radius: 8px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+      }
+      .lightbox-close {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        font-size: 22px;
+        cursor: pointer;
+      }
       @media (max-width: 960px) {
         .main-grid {
           grid-template-columns: 1fr;
@@ -310,9 +428,15 @@
               盈亏比（自动）
               <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
             </label>
-            <label>
+            <label class="rich-field">
               入场条件
               <textarea id="f-condition" placeholder="如：4h 收线突破 VAH + 放量"></textarea>
+              <div class="image-toolbar">
+                <button type="button" id="f-condition-add-img">添加图片</button>
+                <span class="image-hint">支持 Ctrl+V 粘贴截图 · 最多 6 张</span>
+                <input id="f-condition-file" type="file" accept="image/*" multiple hidden />
+              </div>
+              <div id="f-condition-images" class="image-strip"></div>
             </label>
             <label>
               交易结果
@@ -325,9 +449,15 @@
                 <input id="f-result-amount" type="number" step="any" min="0" placeholder="金额 (USDT)" />
               </div>
             </label>
-            <label>
+            <label class="rich-field">
               复盘
               <textarea id="f-review" placeholder="事后总结、可改进点"></textarea>
+              <div class="image-toolbar">
+                <button type="button" id="f-review-add-img">添加图片</button>
+                <span class="image-hint">支持 Ctrl+V 粘贴截图 · 最多 6 张</span>
+                <input id="f-review-file" type="file" accept="image/*" multiple hidden />
+              </div>
+              <div id="f-review-images" class="image-strip"></div>
             </label>
             <div class="form-actions">
               <button type="submit" class="primary" id="submit-btn">保存</button>
@@ -347,9 +477,14 @@
       </div>
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260521"></script>
-    <script src="scripts/ts12-api-client.js?v=20260521"></script>
-    <script src="scripts/ts12-auth.js?v=20260521"></script>
+    <div id="image-lightbox" class="lightbox" hidden>
+      <button type="button" class="lightbox-close" id="lightbox-close" aria-label="关闭">×</button>
+      <img id="lightbox-img" alt="预览" />
+    </div>
+
+    <script src="scripts/ts12-api-config.js?v=20260522"></script>
+    <script src="scripts/ts12-api-client.js?v=20260522"></script>
+    <script src="scripts/ts12-auth.js?v=20260522"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -375,6 +510,155 @@
         resultAmount: document.getElementById("f-result-amount"),
         review: document.getElementById("f-review"),
       };
+
+      const MAX_IMAGES = 6;
+      const MAX_IMAGE_BYTES = 800 * 1024;
+      const lightboxEl = document.getElementById("image-lightbox");
+      const lightboxImgEl = document.getElementById("lightbox-img");
+      const lightboxCloseEl = document.getElementById("lightbox-close");
+
+      const imageFields = {
+        condition: {
+          images: [],
+          stripEl: document.getElementById("f-condition-images"),
+          fileEl: document.getElementById("f-condition-file"),
+          addBtn: document.getElementById("f-condition-add-img"),
+          textarea: fields.condition,
+        },
+        review: {
+          images: [],
+          stripEl: document.getElementById("f-review-images"),
+          fileEl: document.getElementById("f-review-file"),
+          addBtn: document.getElementById("f-review-add-img"),
+          textarea: fields.review,
+        },
+      };
+
+      function openLightbox(src) {
+        if (!src) return;
+        lightboxImgEl.src = src;
+        lightboxEl.hidden = false;
+      }
+
+      function closeLightbox() {
+        lightboxEl.hidden = true;
+        lightboxImgEl.src = "";
+      }
+
+      lightboxCloseEl.addEventListener("click", closeLightbox);
+      lightboxEl.addEventListener("click", (e) => {
+        if (e.target === lightboxEl) closeLightbox();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !lightboxEl.hidden) closeLightbox();
+      });
+
+      function approxBase64Bytes(dataUrl) {
+        const b64 = String(dataUrl || "").split(",")[1] || "";
+        return (b64.length * 3) / 4;
+      }
+
+      function compressImageFile(file, maxWidth = 1200, quality = 0.82) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+              let { width, height } = img;
+              if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+              }
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d");
+              ctx.drawImage(img, 0, 0, width, height);
+              let dataUrl = canvas.toDataURL("image/jpeg", quality);
+              if (approxBase64Bytes(dataUrl) > MAX_IMAGE_BYTES) {
+                dataUrl = canvas.toDataURL("image/jpeg", 0.65);
+              }
+              if (approxBase64Bytes(dataUrl) > MAX_IMAGE_BYTES) {
+                reject(new Error("图片过大，请换一张较小的截图"));
+                return;
+              }
+              resolve(dataUrl);
+            };
+            img.onerror = () => reject(new Error("无法读取图片"));
+            img.src = reader.result;
+          };
+          reader.onerror = () => reject(new Error("无法读取图片"));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function renderImageStrip(fieldKey) {
+        const field = imageFields[fieldKey];
+        field.stripEl.innerHTML = field.images
+          .map(
+            (src, idx) => `<div class="image-thumb">
+              <img src="${src}" alt="图片 ${idx + 1}" data-preview="${src}" />
+              <button type="button" data-remove="${fieldKey}" data-idx="${idx}" aria-label="删除">×</button>
+            </div>`
+          )
+          .join("");
+      }
+
+      async function addImagesToField(fieldKey, files) {
+        const field = imageFields[fieldKey];
+        for (const file of files) {
+          if (!file?.type?.startsWith("image/")) continue;
+          if (field.images.length >= MAX_IMAGES) {
+            alert(`最多 ${MAX_IMAGES} 张图片`);
+            break;
+          }
+          try {
+            const dataUrl = await compressImageFile(file);
+            field.images.push(dataUrl);
+          } catch (err) {
+            alert(String(err?.message || err));
+          }
+        }
+        renderImageStrip(fieldKey);
+      }
+
+      function setupImageField(fieldKey) {
+        const field = imageFields[fieldKey];
+        field.addBtn.addEventListener("click", () => field.fileEl.click());
+        field.fileEl.addEventListener("change", async () => {
+          const files = [...(field.fileEl.files || [])];
+          field.fileEl.value = "";
+          if (files.length) await addImagesToField(fieldKey, files);
+        });
+        field.textarea.addEventListener("paste", async (e) => {
+          const items = e.clipboardData?.items;
+          if (!items) return;
+          const imageFiles = [];
+          for (const item of items) {
+            if (item.type.startsWith("image/")) {
+              const file = item.getAsFile();
+              if (file) imageFiles.push(file);
+            }
+          }
+          if (!imageFiles.length) return;
+          e.preventDefault();
+          await addImagesToField(fieldKey, imageFiles);
+        });
+        field.stripEl.addEventListener("click", (e) => {
+          const removeKey = e.target?.getAttribute?.("data-remove");
+          const idx = Number(e.target?.getAttribute?.("data-idx"));
+          if (removeKey === fieldKey && Number.isFinite(idx)) {
+            field.images.splice(idx, 1);
+            renderImageStrip(fieldKey);
+            return;
+          }
+          const preview = e.target?.getAttribute?.("data-preview") || e.target?.src;
+          if (preview) openLightbox(preview);
+        });
+      }
+
+      setupImageField("condition");
+      setupImageField("review");
 
       let records = [];
       let total = 0;
@@ -473,6 +757,10 @@
         fields.rr.value = "";
         fields.resultType.value = "";
         fields.resultAmount.value = "";
+        imageFields.condition.images = [];
+        imageFields.review.images = [];
+        renderImageStrip("condition");
+        renderImageStrip("review");
         formTitleEl.textContent = "新增记录";
         submitBtn.textContent = "保存";
         cancelEditBtn.hidden = true;
@@ -485,12 +773,18 @@
         fields.tp.value = record.takeProfitPrice ?? "";
         fields.sl.value = record.stopLossPrice ?? "";
         fields.condition.value = record.entryCondition || "";
+        imageFields.condition.images = Array.isArray(record.entryConditionImages)
+          ? [...record.entryConditionImages]
+          : [];
+        renderImageStrip("condition");
         fields.resultType.value = record.tradeResultType || "";
         fields.resultAmount.value =
           record.tradeResultAmount != null && Number.isFinite(Number(record.tradeResultAmount))
             ? record.tradeResultAmount
             : "";
         fields.review.value = record.review || "";
+        imageFields.review.images = Array.isArray(record.reviewImages) ? [...record.reviewImages] : [];
+        renderImageStrip("review");
         updateRiskRewardField();
         formTitleEl.textContent = "编辑记录";
         submitBtn.textContent = "更新";
@@ -501,13 +795,32 @@
         return {
           exchangeSymbol: fields.symbol.value.trim(),
           entryCondition: fields.condition.value.trim(),
+          entryConditionImages: [...imageFields.condition.images],
           entryPrice: Number(fields.entry.value),
           takeProfitPrice: Number(fields.tp.value),
           stopLossPrice: Number(fields.sl.value),
           tradeResultType: fields.resultType.value,
           tradeResultAmount: fields.resultAmount.value,
           review: fields.review.value.trim(),
+          reviewImages: [...imageFields.review.images],
         };
+      }
+
+      function formatRichCell(text, images) {
+        const imgs = Array.isArray(images) ? images : [];
+        const textHtml = text
+          ? `<div class="cell-rich-text">${escapeHtml(text)}</div>`
+          : `<div class="cell-rich-text">--</div>`;
+        const thumbs = imgs.length
+          ? `<div class="cell-thumb-row">${imgs
+              .slice(0, 3)
+              .map(
+                (src) =>
+                  `<img src="${src}" alt="" data-preview="${src}" title="点击查看大图" />`
+              )
+              .join("")}${imgs.length > 3 ? `<span class="image-hint">+${imgs.length - 3}</span>` : ""}</div>`
+          : "";
+        return `<div class="cell-rich">${textHtml}${thumbs}</div>`;
       }
 
       function renderTable() {
@@ -530,9 +843,9 @@
               <td>${formatPrice(r.takeProfitPrice)}</td>
               <td>${formatPrice(r.stopLossPrice)}</td>
               <td class="ratio">${formatRatio(r.riskRewardRatio)}</td>
-              <td class="cell-text" title="${escapeHtml(r.entryCondition || "")}">${escapeHtml(r.entryCondition || "--")}</td>
+              <td>${formatRichCell(r.entryCondition, r.entryConditionImages)}</td>
               <td title="${escapeHtml(result.text)}">${result.html}</td>
-              <td class="cell-text" title="${escapeHtml(r.review || "")}">${escapeHtml(r.review || "--")}</td>
+              <td>${formatRichCell(r.review, r.reviewImages)}</td>
               <td><div class="row-actions">
                 <button type="button" data-edit="${r.id}">编辑</button>
                 <button type="button" class="danger" data-del="${r.id}">删除</button>
@@ -617,6 +930,11 @@
       loadMoreBtn.addEventListener("click", () => fetchPage(false));
 
       tableWrapEl.addEventListener("click", async (e) => {
+        const preview = e.target?.getAttribute?.("data-preview") || e.target?.src;
+        if (preview && e.target?.tagName === "IMG") {
+          openLightbox(preview);
+          return;
+        }
         const editId = e.target?.getAttribute?.("data-edit");
         const delId = e.target?.getAttribute?.("data-del");
         if (editId) {

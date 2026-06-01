@@ -58,6 +58,8 @@ db.exec(`
     risk_reward_ratio REAL,
     trade_result TEXT NOT NULL DEFAULT '',
     review TEXT NOT NULL DEFAULT '',
+    entry_condition_images TEXT NOT NULL DEFAULT '[]',
+    review_images TEXT NOT NULL DEFAULT '[]',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -66,6 +68,15 @@ db.exec(`
 
 try {
   db.exec(`ALTER TABLE volume_alerts ADD COLUMN trigger_candle_open_time INTEGER`);
+} catch (_) {}
+
+try {
+  db.exec(
+    `ALTER TABLE trade_records ADD COLUMN entry_condition_images TEXT NOT NULL DEFAULT '[]'`
+  );
+} catch (_) {}
+try {
+  db.exec(`ALTER TABLE trade_records ADD COLUMN review_images TEXT NOT NULL DEFAULT '[]'`);
 } catch (_) {}
 
 db.exec(`
@@ -417,6 +428,43 @@ function decodeTradeResult(raw) {
   return { tradeResult: text, tradeResultType: null, tradeResultAmount: null };
 }
 
+const MAX_TRADE_IMAGES = 6;
+const MAX_TRADE_IMAGE_BYTES = 800 * 1024;
+
+function normalizeImageList(raw) {
+  let arr = [];
+  if (Array.isArray(raw)) arr = raw;
+  else if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      arr = [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const item of arr) {
+    if (out.length >= MAX_TRADE_IMAGES) break;
+    const url = String(item || "").trim();
+    if (!/^data:image\/(jpeg|png|webp|gif);base64,/i.test(url)) continue;
+    const b64 = url.split(",")[1] || "";
+    const approxBytes = (b64.length * 3) / 4;
+    if (approxBytes > MAX_TRADE_IMAGE_BYTES) continue;
+    out.push(url);
+  }
+  return out;
+}
+
+function serializeImageList(raw) {
+  return JSON.stringify(normalizeImageList(raw));
+}
+
+function parseImageListFromDb(raw) {
+  if (Array.isArray(raw)) return normalizeImageList(raw);
+  return normalizeImageList(String(raw ?? "[]"));
+}
+
 function normalizeTradeRecordInput(raw) {
   const exchangeSymbol = String(raw?.exchangeSymbol || raw?.exchange_symbol || "")
     .trim()
@@ -426,6 +474,10 @@ function normalizeTradeRecordInput(raw) {
   const takeProfitPrice = Number(raw?.takeProfitPrice ?? raw?.take_profit_price);
   const stopLossPrice = Number(raw?.stopLossPrice ?? raw?.stop_loss_price);
   const review = String(raw?.review ?? "").trim();
+  const entryConditionImages = normalizeImageList(
+    raw?.entryConditionImages ?? raw?.entry_condition_images
+  );
+  const reviewImages = normalizeImageList(raw?.reviewImages ?? raw?.review_images);
   const resultType = String(raw?.tradeResultType ?? raw?.trade_result_type ?? "").trim().toLowerCase();
   const resultAmountRaw = raw?.tradeResultAmount ?? raw?.trade_result_amount;
   const hasType = resultType === "profit" || resultType === "loss";
@@ -454,6 +506,8 @@ function normalizeTradeRecordInput(raw) {
     riskRewardRatio,
     tradeResult,
     review,
+    entryConditionImages,
+    reviewImages,
   };
 }
 
@@ -464,6 +518,7 @@ function mapTradeRecordRow(row) {
     id: row.id,
     exchangeSymbol: row.exchangeSymbol,
     entryCondition: row.entryCondition,
+    entryConditionImages: parseImageListFromDb(row.entryConditionImages),
     entryPrice: row.entryPrice,
     takeProfitPrice: row.takeProfitPrice,
     stopLossPrice: row.stopLossPrice,
@@ -472,6 +527,7 @@ function mapTradeRecordRow(row) {
     tradeResultType: decoded.tradeResultType,
     tradeResultAmount: decoded.tradeResultAmount,
     review: row.review,
+    reviewImages: parseImageListFromDb(row.reviewImages),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -491,6 +547,8 @@ export function listTradeRecords(userId, { limit = 50, offset = 0 } = {}) {
               risk_reward_ratio AS riskRewardRatio,
               trade_result AS tradeResult,
               review,
+              entry_condition_images AS entryConditionImages,
+              review_images AS reviewImages,
               created_at AS createdAt,
               updated_at AS updatedAt
        FROM trade_records
@@ -518,6 +576,8 @@ export function getTradeRecord(userId, id) {
               risk_reward_ratio AS riskRewardRatio,
               trade_result AS tradeResult,
               review,
+              entry_condition_images AS entryConditionImages,
+              review_images AS reviewImages,
               created_at AS createdAt,
               updated_at AS updatedAt
        FROM trade_records
@@ -535,8 +595,9 @@ export function createTradeRecord(userId, raw) {
   db.prepare(
     `INSERT INTO trade_records
       (id, user_id, exchange_symbol, entry_condition, entry_price, take_profit_price,
-       stop_loss_price, risk_reward_ratio, trade_result, review, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       stop_loss_price, risk_reward_ratio, trade_result, review,
+       entry_condition_images, review_images, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
@@ -548,6 +609,8 @@ export function createTradeRecord(userId, raw) {
     data.riskRewardRatio,
     data.tradeResult,
     data.review,
+    serializeImageList(data.entryConditionImages),
+    serializeImageList(data.reviewImages),
     now,
     now
   );
@@ -570,6 +633,8 @@ export function updateTradeRecord(userId, id, raw) {
        risk_reward_ratio = ?,
        trade_result = ?,
        review = ?,
+       entry_condition_images = ?,
+       review_images = ?,
        updated_at = ?
      WHERE user_id = ? AND id = ?`
   ).run(
@@ -581,6 +646,8 @@ export function updateTradeRecord(userId, id, raw) {
     data.riskRewardRatio,
     data.tradeResult,
     data.review,
+    serializeImageList(data.entryConditionImages),
+    serializeImageList(data.reviewImages),
     now,
     userId,
     id

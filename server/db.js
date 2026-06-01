@@ -47,6 +47,21 @@ db.exec(`
     alert_count INTEGER NOT NULL,
     inserted_count INTEGER NOT NULL DEFAULT 0
   );
+  CREATE TABLE IF NOT EXISTS trade_records (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    exchange_symbol TEXT NOT NULL,
+    entry_condition TEXT NOT NULL DEFAULT '',
+    entry_price REAL NOT NULL,
+    take_profit_price REAL NOT NULL,
+    stop_loss_price REAL NOT NULL,
+    risk_reward_ratio REAL,
+    trade_result TEXT NOT NULL DEFAULT '',
+    review TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_trade_records_user ON trade_records(user_id, created_at DESC);
 `);
 
 try {
@@ -350,6 +365,188 @@ export function insertVolumeAlerts(alerts, createdAt = Date.now()) {
   });
   tx(Array.isArray(alerts) ? alerts : []);
   return inserted;
+}
+
+export function computeRiskRewardRatio(entryPrice, takeProfitPrice, stopLossPrice) {
+  const entry = Number(entryPrice);
+  const tp = Number(takeProfitPrice);
+  const sl = Number(stopLossPrice);
+  if (![entry, tp, sl].every(Number.isFinite) || entry <= 0) return null;
+  let risk = 0;
+  let reward = 0;
+  if (tp > entry && sl < entry) {
+    risk = entry - sl;
+    reward = tp - entry;
+  } else if (tp < entry && sl > entry) {
+    risk = sl - entry;
+    reward = entry - tp;
+  } else {
+    risk = Math.abs(entry - sl);
+    reward = Math.abs(tp - entry);
+  }
+  if (!(risk > 0)) return null;
+  return reward / risk;
+}
+
+function normalizeTradeRecordInput(raw) {
+  const exchangeSymbol = String(raw?.exchangeSymbol || raw?.exchange_symbol || "")
+    .trim()
+    .toUpperCase();
+  const entryCondition = String(raw?.entryCondition ?? raw?.entry_condition ?? "").trim();
+  const entryPrice = Number(raw?.entryPrice ?? raw?.entry_price);
+  const takeProfitPrice = Number(raw?.takeProfitPrice ?? raw?.take_profit_price);
+  const stopLossPrice = Number(raw?.stopLossPrice ?? raw?.stop_loss_price);
+  const tradeResult = String(raw?.tradeResult ?? raw?.trade_result ?? "").trim();
+  const review = String(raw?.review ?? "").trim();
+  if (!exchangeSymbol) return { error: "请填写交易币种" };
+  if (![entryPrice, takeProfitPrice, stopLossPrice].every(Number.isFinite)) {
+    return { error: "入场价、止盈价、止损价须为有效数字" };
+  }
+  const riskRewardRatio = computeRiskRewardRatio(entryPrice, takeProfitPrice, stopLossPrice);
+  if (riskRewardRatio == null) return { error: "无法计算盈亏比，请检查价格" };
+  return {
+    exchangeSymbol,
+    entryCondition,
+    entryPrice,
+    takeProfitPrice,
+    stopLossPrice,
+    riskRewardRatio,
+    tradeResult,
+    review,
+  };
+}
+
+function mapTradeRecordRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    exchangeSymbol: row.exchangeSymbol,
+    entryCondition: row.entryCondition,
+    entryPrice: row.entryPrice,
+    takeProfitPrice: row.takeProfitPrice,
+    stopLossPrice: row.stopLossPrice,
+    riskRewardRatio: row.riskRewardRatio,
+    tradeResult: row.tradeResult,
+    review: row.review,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function listTradeRecords(userId, { limit = 50, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  const records = db
+    .prepare(
+      `SELECT id,
+              exchange_symbol AS exchangeSymbol,
+              entry_condition AS entryCondition,
+              entry_price AS entryPrice,
+              take_profit_price AS takeProfitPrice,
+              stop_loss_price AS stopLossPrice,
+              risk_reward_ratio AS riskRewardRatio,
+              trade_result AS tradeResult,
+              review,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM trade_records
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(userId, safeLimit, safeOffset)
+    .map(mapTradeRecordRow);
+  const total =
+    db.prepare(`SELECT COUNT(*) AS count FROM trade_records WHERE user_id = ?`).get(userId)
+      ?.count || 0;
+  return { records, total, limit: safeLimit, offset: safeOffset };
+}
+
+export function getTradeRecord(userId, id) {
+  const row = db
+    .prepare(
+      `SELECT id,
+              exchange_symbol AS exchangeSymbol,
+              entry_condition AS entryCondition,
+              entry_price AS entryPrice,
+              take_profit_price AS takeProfitPrice,
+              stop_loss_price AS stopLossPrice,
+              risk_reward_ratio AS riskRewardRatio,
+              trade_result AS tradeResult,
+              review,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM trade_records
+       WHERE user_id = ? AND id = ?`
+    )
+    .get(userId, id);
+  return mapTradeRecordRow(row);
+}
+
+export function createTradeRecord(userId, raw) {
+  const data = normalizeTradeRecordInput(raw);
+  if (data.error) return data;
+  const now = Date.now();
+  const id = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
+  db.prepare(
+    `INSERT INTO trade_records
+      (id, user_id, exchange_symbol, entry_condition, entry_price, take_profit_price,
+       stop_loss_price, risk_reward_ratio, trade_result, review, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    userId,
+    data.exchangeSymbol,
+    data.entryCondition,
+    data.entryPrice,
+    data.takeProfitPrice,
+    data.stopLossPrice,
+    data.riskRewardRatio,
+    data.tradeResult,
+    data.review,
+    now,
+    now
+  );
+  return { record: getTradeRecord(userId, id) };
+}
+
+export function updateTradeRecord(userId, id, raw) {
+  const existing = getTradeRecord(userId, id);
+  if (!existing) return { error: "记录不存在" };
+  const data = normalizeTradeRecordInput(raw);
+  if (data.error) return data;
+  const now = Date.now();
+  db.prepare(
+    `UPDATE trade_records SET
+       exchange_symbol = ?,
+       entry_condition = ?,
+       entry_price = ?,
+       take_profit_price = ?,
+       stop_loss_price = ?,
+       risk_reward_ratio = ?,
+       trade_result = ?,
+       review = ?,
+       updated_at = ?
+     WHERE user_id = ? AND id = ?`
+  ).run(
+    data.exchangeSymbol,
+    data.entryCondition,
+    data.entryPrice,
+    data.takeProfitPrice,
+    data.stopLossPrice,
+    data.riskRewardRatio,
+    data.tradeResult,
+    data.review,
+    now,
+    userId,
+    id
+  );
+  return { record: getTradeRecord(userId, id) };
+}
+
+export function deleteTradeRecord(userId, id) {
+  const info = db.prepare(`DELETE FROM trade_records WHERE user_id = ? AND id = ?`).run(userId, id);
+  return info.changes > 0;
 }
 
 export default db;

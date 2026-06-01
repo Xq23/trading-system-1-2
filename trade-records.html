@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>交易记录</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b1220;
+        color: #dbe6ff;
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 16px 14px 28px;
+      }
+      .head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 14px;
+        margin-bottom: 14px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .sub {
+        flex: 1 1 100%;
+        color: #7f92bd;
+        font-size: 13px;
+      }
+      .head a,
+      .head button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .head a:hover,
+      .head button:hover:not(:disabled) {
+        background: #1d2a45;
+      }
+      .head button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .panel {
+        border: 1px solid #2d3b59;
+        border-radius: 10px;
+        background: #0d1527;
+        overflow: hidden;
+        margin-bottom: 14px;
+      }
+      .panel-title {
+        padding: 10px 12px;
+        font-size: 14px;
+        font-weight: 600;
+        border-bottom: 1px solid #1f2f4e;
+        background: #111b2f;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 12px;
+        padding: 12px;
+      }
+      .form-grid .full {
+        grid-column: 1 / -1;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        color: #9eb0d8;
+      }
+      input,
+      textarea {
+        width: 100%;
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+      textarea {
+        min-height: 72px;
+        resize: vertical;
+      }
+      input:read-only {
+        color: #ffc971;
+        background: #131d33;
+      }
+      .form-actions {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .form-actions button.primary {
+        background: #2d4a8a;
+        border-color: #4c72ff;
+      }
+      .form-actions button.primary:hover:not(:disabled) {
+        background: #3a5aa0;
+      }
+      .status {
+        padding: 10px 12px;
+        font-size: 13px;
+        color: #9eb0d8;
+        border-bottom: 1px solid #1f2f4e;
+      }
+      .status.error {
+        color: #ff9090;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        padding: 8px 10px;
+        text-align: left;
+        border-bottom: 1px solid #1a2742;
+        vertical-align: top;
+      }
+      th {
+        color: #9eb0d8;
+        font-weight: 600;
+        background: #0d1527;
+        white-space: nowrap;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .sym {
+        font-weight: 600;
+      }
+      .ratio {
+        color: #ffc971;
+        font-weight: 600;
+      }
+      .cell-text {
+        max-width: 160px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .row-actions button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .row-actions button:hover {
+        background: #1d2a45;
+      }
+      .row-actions button.danger {
+        color: #ff9090;
+        border-color: #5a3030;
+      }
+      .empty {
+        padding: 28px 12px;
+        text-align: center;
+        color: #5f739e;
+        font-size: 13px;
+      }
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-top: 1px solid #1f2f4e;
+      }
+      @media (max-width: 720px) {
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+        .cell-text {
+          max-width: 100px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head">
+        <h1>交易记录</h1>
+        <span class="sub">与登录账号绑定 · 盈亏比根据入场/止盈/止损自动计算</span>
+        <a href="overview.html">返回概览</a>
+        <button type="button" id="reload-btn">刷新</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title" id="form-title">新增记录</div>
+        <form id="record-form" class="form-grid">
+          <label>
+            交易币种
+            <input id="f-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
+          </label>
+          <label>
+            入场价格
+            <input id="f-entry" type="number" step="any" min="0" required />
+          </label>
+          <label>
+            止盈价
+            <input id="f-tp" type="number" step="any" min="0" required />
+          </label>
+          <label>
+            止损价
+            <input id="f-sl" type="number" step="any" min="0" required />
+          </label>
+          <label>
+            盈亏比（自动）
+            <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
+          </label>
+          <label class="full">
+            入场条件
+            <textarea id="f-condition" placeholder="如：4h 收线突破 VAH + 放量"></textarea>
+          </label>
+          <label class="full">
+            交易结果
+            <textarea id="f-result" placeholder="如：止盈离场 / 止损 / 未触发"></textarea>
+          </label>
+          <label class="full">
+            复盘
+            <textarea id="f-review" placeholder="事后总结、可改进点"></textarea>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="primary" id="submit-btn">保存</button>
+            <button type="button" id="cancel-edit-btn" hidden>取消编辑</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div id="status" class="status">加载中…</div>
+        <div id="table-wrap"></div>
+        <div class="foot">
+          <span id="page-info"></span>
+          <button type="button" id="load-more-btn" disabled>加载更多</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="scripts/ts12-api-config.js"></script>
+    <script src="scripts/ts12-api-client.js"></script>
+    <script src="scripts/ts12-auth.js"></script>
+    <script>
+      Ts12Auth.requireLogin();
+
+      const PAGE_SIZE = 30;
+      const formEl = document.getElementById("record-form");
+      const formTitleEl = document.getElementById("form-title");
+      const submitBtn = document.getElementById("submit-btn");
+      const cancelEditBtn = document.getElementById("cancel-edit-btn");
+      const statusEl = document.getElementById("status");
+      const tableWrapEl = document.getElementById("table-wrap");
+      const pageInfoEl = document.getElementById("page-info");
+      const loadMoreBtn = document.getElementById("load-more-btn");
+      const reloadBtn = document.getElementById("reload-btn");
+
+      const fields = {
+        symbol: document.getElementById("f-symbol"),
+        entry: document.getElementById("f-entry"),
+        tp: document.getElementById("f-tp"),
+        sl: document.getElementById("f-sl"),
+        rr: document.getElementById("f-rr"),
+        condition: document.getElementById("f-condition"),
+        result: document.getElementById("f-result"),
+        review: document.getElementById("f-review"),
+      };
+
+      let records = [];
+      let total = 0;
+      let offset = 0;
+      let loading = false;
+      let editingId = null;
+
+      function computeRiskReward(entry, tp, sl) {
+        const e = Number(entry);
+        const t = Number(tp);
+        const s = Number(sl);
+        if (![e, t, s].every(Number.isFinite) || e <= 0) return null;
+        let risk = 0;
+        let reward = 0;
+        if (t > e && s < e) {
+          risk = e - s;
+          reward = t - e;
+        } else if (t < e && s > e) {
+          risk = s - e;
+          reward = e - t;
+        } else {
+          risk = Math.abs(e - s);
+          reward = Math.abs(t - e);
+        }
+        if (!(risk > 0)) return null;
+        return reward / risk;
+      }
+
+      function formatPrice(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return "--";
+        if (n >= 1000) return n.toFixed(2);
+        if (n >= 1) return n.toFixed(4);
+        return n.toFixed(6);
+      }
+
+      function formatRatio(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return "--";
+        return `${n.toFixed(2)} : 1`;
+      }
+
+      function formatTime(ms) {
+        const d = new Date(ms);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const h = String(d.getHours()).padStart(2, "0");
+        const min = String(d.getMinutes()).padStart(2, "0");
+        return `${y}-${m}-${day} ${h}:${min}`;
+      }
+
+      function formatSymbol(sym) {
+        const s = String(sym || "").toUpperCase();
+        if (s.endsWith("USDT")) return s.slice(0, -4);
+        return s;
+      }
+
+      function updateRiskRewardField() {
+        const rr = computeRiskReward(fields.entry.value, fields.tp.value, fields.sl.value);
+        fields.rr.value = rr == null ? "" : formatRatio(rr);
+      }
+
+      function resetForm() {
+        editingId = null;
+        formEl.reset();
+        fields.rr.value = "";
+        formTitleEl.textContent = "新增记录";
+        submitBtn.textContent = "保存";
+        cancelEditBtn.hidden = true;
+      }
+
+      function fillForm(record) {
+        editingId = record.id;
+        fields.symbol.value = record.exchangeSymbol || "";
+        fields.entry.value = record.entryPrice ?? "";
+        fields.tp.value = record.takeProfitPrice ?? "";
+        fields.sl.value = record.stopLossPrice ?? "";
+        fields.condition.value = record.entryCondition || "";
+        fields.result.value = record.tradeResult || "";
+        fields.review.value = record.review || "";
+        updateRiskRewardField();
+        formTitleEl.textContent = "编辑记录";
+        submitBtn.textContent = "更新";
+        cancelEditBtn.hidden = false;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+
+      function getFormPayload() {
+        return {
+          exchangeSymbol: fields.symbol.value.trim(),
+          entryCondition: fields.condition.value.trim(),
+          entryPrice: Number(fields.entry.value),
+          takeProfitPrice: Number(fields.tp.value),
+          stopLossPrice: Number(fields.sl.value),
+          tradeResult: fields.result.value.trim(),
+          review: fields.review.value.trim(),
+        };
+      }
+
+      function renderTable() {
+        if (!records.length) {
+          tableWrapEl.innerHTML = '<div class="empty">暂无交易记录，在上方表单添加第一条。</div>';
+          return;
+        }
+        tableWrapEl.innerHTML = `<table>
+          <thead><tr>
+            <th>时间</th><th>币种</th><th>入场价</th><th>止盈</th><th>止损</th><th>盈亏比</th>
+            <th>入场条件</th><th>结果</th><th>复盘</th><th></th>
+          </tr></thead>
+          <tbody>${records
+            .map(
+              (r) => `<tr>
+              <td>${formatTime(r.updatedAt || r.createdAt)}</td>
+              <td class="sym">${formatSymbol(r.exchangeSymbol)}</td>
+              <td>${formatPrice(r.entryPrice)}</td>
+              <td>${formatPrice(r.takeProfitPrice)}</td>
+              <td>${formatPrice(r.stopLossPrice)}</td>
+              <td class="ratio">${formatRatio(r.riskRewardRatio)}</td>
+              <td class="cell-text" title="${escapeHtml(r.entryCondition || "")}">${escapeHtml(r.entryCondition || "--")}</td>
+              <td class="cell-text" title="${escapeHtml(r.tradeResult || "")}">${escapeHtml(r.tradeResult || "--")}</td>
+              <td class="cell-text" title="${escapeHtml(r.review || "")}">${escapeHtml(r.review || "--")}</td>
+              <td><div class="row-actions">
+                <button type="button" data-edit="${r.id}">编辑</button>
+                <button type="button" class="danger" data-del="${r.id}">删除</button>
+              </div></td>
+            </tr>`
+            )
+            .join("")}</tbody></table>`;
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function updateFooter() {
+        pageInfoEl.textContent = total ? `已加载 ${records.length} / ${total} 条` : "";
+        loadMoreBtn.disabled = loading || records.length >= total;
+      }
+
+      async function fetchPage(reset = false) {
+        if (loading) return;
+        loading = true;
+        reloadBtn.disabled = true;
+        loadMoreBtn.disabled = true;
+        statusEl.textContent = reset ? "加载中…" : "加载更多…";
+        statusEl.classList.remove("error");
+        try {
+          if (reset) {
+            offset = 0;
+            records = [];
+          }
+          const res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset });
+          const batch = Array.isArray(res?.records) ? res.records : [];
+          records = reset ? batch : records.concat(batch);
+          total = Number(res?.total) || records.length;
+          offset = records.length;
+          statusEl.textContent = records.length ? `共 ${total} 条记录` : "暂无记录";
+          renderTable();
+        } catch (err) {
+          statusEl.textContent = String(err?.message || err);
+          statusEl.classList.add("error");
+        } finally {
+          loading = false;
+          reloadBtn.disabled = false;
+          updateFooter();
+        }
+      }
+
+      ["input", "change"].forEach((evt) => {
+        fields.entry.addEventListener(evt, updateRiskRewardField);
+        fields.tp.addEventListener(evt, updateRiskRewardField);
+        fields.sl.addEventListener(evt, updateRiskRewardField);
+      });
+
+      formEl.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        submitBtn.disabled = true;
+        try {
+          const payload = getFormPayload();
+          if (editingId) {
+            await Ts12Api.updateTradeRecord(editingId, payload);
+          } else {
+            await Ts12Api.createTradeRecord(payload);
+          }
+          resetForm();
+          await fetchPage(true);
+        } catch (err) {
+          alert(String(err?.message || err));
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
+      cancelEditBtn.addEventListener("click", resetForm);
+      reloadBtn.addEventListener("click", () => fetchPage(true));
+      loadMoreBtn.addEventListener("click", () => fetchPage(false));
+
+      tableWrapEl.addEventListener("click", async (e) => {
+        const editId = e.target?.getAttribute?.("data-edit");
+        const delId = e.target?.getAttribute?.("data-del");
+        if (editId) {
+          const record = records.find((r) => r.id === editId);
+          if (record) fillForm(record);
+          return;
+        }
+        if (delId) {
+          if (!window.confirm("确定删除这条交易记录？")) return;
+          try {
+            await Ts12Api.deleteTradeRecord(delId);
+            if (editingId === delId) resetForm();
+            await fetchPage(true);
+          } catch (err) {
+            alert(String(err?.message || err));
+          }
+        }
+      });
+
+      fetchPage(true);
+    </script>
+  </body>
+</html>

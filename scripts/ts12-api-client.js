@@ -129,6 +129,31 @@
     });
   }
 
+  async function getTradeRecords({ limit = 50, offset = 0 } = {}) {
+    const q = new URLSearchParams();
+    q.set("limit", String(limit));
+    q.set("offset", String(offset));
+    return apiFetch(`/api/trade-records?${q.toString()}`);
+  }
+
+  async function createTradeRecord(payload) {
+    return apiFetch("/api/trade-records", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function updateTradeRecord(id, payload) {
+    return apiFetch(`/api/trade-records/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function deleteTradeRecord(id) {
+    return apiFetch(`/api/trade-records/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
   global.Ts12Api = {
     getApiBase,
     isEnabled,
@@ -147,5 +172,9 @@
     getVolumeAlertScanStatus,
     postVolumeAlertScanComplete,
     postVolumeAlertsBatch,
+    getTradeRecords,
+    createTradeRecord,
+    updateTradeRecord,
+    deleteTradeRecord,
   };
 })(typeof window !== "undefined" ? window : globalThis);

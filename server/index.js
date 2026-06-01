@@ -17,6 +17,11 @@ import {
   setSystemMeta,
   upsertBreakScan,
   upsertPrefs,
+  listTradeRecords,
+  getTradeRecord,
+  createTradeRecord,
+  updateTradeRecord,
+  deleteTradeRecord,
 } from "./db.js";
 import {
   startVolumeAlertScheduler,
@@ -331,6 +336,49 @@ app.post("/api/volume-alerts/backtest", authMiddleware, (req, res) => {
   void runVolumeAlertBacktest({ periods, force }).catch((err) => {
     console.error("[volume-alert] 回测失败", err);
   });
+});
+
+app.get("/api/trade-records", authMiddleware, (req, res) => {
+  const limit = req.query?.limit;
+  const offset = req.query?.offset;
+  res.json(listTradeRecords(req.user.id, { limit, offset }));
+});
+
+app.get("/api/trade-records/:id", authMiddleware, (req, res) => {
+  const record = getTradeRecord(req.user.id, req.params.id);
+  if (!record) {
+    res.status(404).json({ error: "记录不存在" });
+    return;
+  }
+  res.json({ record });
+});
+
+app.post("/api/trade-records", authMiddleware, (req, res) => {
+  const result = createTradeRecord(req.user.id, req.body);
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, record: result.record });
+});
+
+app.put("/api/trade-records/:id", authMiddleware, (req, res) => {
+  const result = updateTradeRecord(req.user.id, req.params.id, req.body);
+  if (result.error) {
+    const status = result.error === "记录不存在" ? 404 : 400;
+    res.status(status).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, record: result.record });
+});
+
+app.delete("/api/trade-records/:id", authMiddleware, (req, res) => {
+  const ok = deleteTradeRecord(req.user.id, req.params.id);
+  if (!ok) {
+    res.status(404).json({ error: "记录不存在" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 app.use((err, _req, res, _next) => {

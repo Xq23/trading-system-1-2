@@ -10,6 +10,8 @@
   const SCAN_CONCURRENCY = 5;
   const SYMBOL_GAP_MS = 50;
   const REQUEST_TIMEOUT_MS = 15000;
+  const LOCAL_ALERTS_KEY = "ts12-volume-alerts-cache-v1";
+  const LOCAL_BATCHES_KEY = "ts12-volume-alert-batches-v1";
 
   function makeSymbolKey(exchangeSymbol) {
     return String(exchangeSymbol || "").trim().toUpperCase();
@@ -91,6 +93,131 @@
     return (aggregated?.conditions || [])
       .map((c) => `${formatConditionType(c.conditionType)} ${formatRatio(c.ratio)}`)
       .join(" · ");
+  }
+
+  function readLocalAlerts() {
+    try {
+      const raw = global.localStorage?.getItem(LOCAL_ALERTS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeLocalAlerts(alerts) {
+    try {
+      global.localStorage?.setItem(LOCAL_ALERTS_KEY, JSON.stringify((alerts || []).slice(0, 500)));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function groupAlertsIntoBatches(alerts) {
+    const map = new Map();
+    for (const alert of alerts || []) {
+      const trigger = Number(alert.triggerCandleOpenTime || alert.candleOpenTime);
+      if (!Number.isFinite(trigger)) continue;
+      if (!map.has(trigger)) map.set(trigger, []);
+      map.get(trigger).push(alert);
+    }
+    return [...map.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([triggerCandleOpenTime, items]) => ({
+        triggerCandleOpenTime,
+        scannedAt: Math.max(
+          ...items.map((a) => Number(a.createdAt || a.candleCloseTime || 0) || 0)
+        ),
+        symbolCount: null,
+        alertCount: items.length,
+        alerts: items.sort((a, b) => (Number(b.ratio) || 0) - (Number(a.ratio) || 0)),
+      }));
+  }
+
+  function readLocalBatches() {
+    try {
+      const raw = global.localStorage?.getItem(LOCAL_BATCHES_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed?.batches) && parsed.batches.length) {
+        return parsed.batches;
+      }
+    } catch {
+      /* ignore */
+    }
+    return groupAlertsIntoBatches(readLocalAlerts());
+  }
+
+  function writeLocalBatches(batches) {
+    try {
+      const list = (batches || []).sort((a, b) => b.triggerCandleOpenTime - a.triggerCandleOpenTime);
+      global.localStorage?.setItem(
+        LOCAL_BATCHES_KEY,
+        JSON.stringify({ batches: list, total: list.length })
+      );
+      writeLocalAlerts(list.flatMap((b) => b.alerts || []));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function upsertLocalBatch(batch) {
+    const trigger = Number(batch?.triggerCandleOpenTime);
+    if (!Number.isFinite(trigger)) return;
+    const batches = readLocalBatches();
+    const scannedAt = Number(batch.scannedAt) || Date.now();
+    const alerts = Array.isArray(batch.alerts) ? batch.alerts : [];
+    const next = {
+      triggerCandleOpenTime: trigger,
+      scannedAt,
+      symbolCount: batch.symbolCount ?? null,
+      alertCount: batch.alertCount ?? alerts.length,
+      insertedCount: batch.insertedCount ?? null,
+      alerts,
+    };
+    const idx = batches.findIndex((b) => b.triggerCandleOpenTime === trigger);
+    if (idx >= 0) batches[idx] = next;
+    else batches.push(next);
+    writeLocalBatches(batches);
+  }
+
+  function cacheCloudBatch(batch) {
+    if (!batch?.scan) return;
+    upsertLocalBatch({
+      ...batch.scan,
+      alerts: batch.alerts || [],
+    });
+  }
+
+  function loadLatestBatchFromLocal() {
+    const batches = readLocalBatches();
+    if (!batches.length) return { scan: null, alerts: [] };
+    const latest = batches[0];
+    return {
+      scan: {
+        triggerCandleOpenTime: latest.triggerCandleOpenTime,
+        scannedAt: latest.scannedAt,
+        symbolCount: latest.symbolCount,
+        alertCount: latest.alertCount,
+        insertedCount: latest.insertedCount ?? null,
+      },
+      alerts: latest.alerts || [],
+    };
+  }
+
+  function listLocalBatchHistory({ limit = 30, offset = 0 } = {}) {
+    const batches = readLocalBatches();
+    const safeLimit = Math.max(Number(limit) || 30, 1);
+    const safeOffset = Math.max(Number(offset) || 0, 0);
+    return {
+      batches: batches.slice(safeOffset, safeOffset + safeLimit),
+      total: batches.length,
+      limit: safeLimit,
+      offset: safeOffset,
+    };
+  }
+
+  function isLocalFileMode() {
+    return typeof global.location !== "undefined" && global.location.protocol === "file:";
   }
 
   function formatAlertTime(ms) {
@@ -274,10 +401,19 @@
     return missing.sort((a, b) => a - b);
   }
 
+  /** 相对已扫描批次，找出最近 7 根内尚未入库的 4h 批次 */
   async function listMissingClosedTriggersFromApi() {
-    if (!global.Ts12Api?.getVolumeAlertHistory) return listMissingClosedTriggers([]);
-    const res = await global.Ts12Api.getVolumeAlertHistory({ limit: 100, offset: 0 });
-    const scanned = (res?.batches || []).map((b) => b.triggerCandleOpenTime);
+    let scanned = [];
+    if (global.Ts12Api?.getVolumeAlertHistory && !isLocalFileMode()) {
+      try {
+        const res = await global.Ts12Api.getVolumeAlertHistory({ limit: 100, offset: 0 });
+        scanned = (res?.batches || []).map((b) => b.triggerCandleOpenTime);
+      } catch {
+        scanned = readLocalBatches().map((b) => b.triggerCandleOpenTime);
+      }
+    } else {
+      scanned = readLocalBatches().map((b) => b.triggerCandleOpenTime);
+    }
     return listMissingClosedTriggers(scanned);
   }
 
@@ -325,10 +461,25 @@
         symbolCount: symbols.length,
         alerts,
       };
-      if (global.Ts12Api.postVolumeAlertScanComplete) {
-        await global.Ts12Api.postVolumeAlertScanComplete(payload);
-      } else {
-        await global.Ts12Api.postVolumeAlertsBatch(alerts);
+      upsertLocalBatch({
+        triggerCandleOpenTime: triggerOpenTime,
+        scannedAt: Date.now(),
+        symbolCount: symbols.length,
+        alertCount: alerts.length,
+        alerts,
+      });
+      if (global.Ts12Api.postVolumeAlertScanComplete && !isLocalFileMode()) {
+        try {
+          await global.Ts12Api.postVolumeAlertScanComplete(payload);
+        } catch (err) {
+          console.warn("[volume-alert] 上传云端失败，已保存到本地", err);
+        }
+      } else if (global.Ts12Api.postVolumeAlertsBatch && !isLocalFileMode()) {
+        try {
+          await global.Ts12Api.postVolumeAlertsBatch(alerts);
+        } catch (err) {
+          console.warn("[volume-alert] 上传云端失败，已保存到本地", err);
+        }
       }
       results.push({ triggerOpenTime, alertCount: alerts.length });
     }
@@ -343,7 +494,10 @@
 
     if (clearFirst) {
       if (onProgress) onProgress({ phase: "clearing" });
-      await global.Ts12Api.clearVolumeAlerts();
+      writeLocalBatches([]);
+      if (!isLocalFileMode() && global.Ts12Api?.clearVolumeAlerts) {
+        await global.Ts12Api.clearVolumeAlerts();
+      }
     }
 
     return runTriggersScanInBrowser(triggers, { onProgress });
@@ -357,15 +511,39 @@
   }
 
   async function loadLatestBatch() {
-    if (global.Ts12Api?.isEnabled?.()) {
+    const useCloud = global.Ts12Api?.isEnabled?.() && !isLocalFileMode();
+    if (useCloud) {
       try {
-        return await global.Ts12Api.getVolumeAlertsLatest();
+        const batch = await global.Ts12Api.getVolumeAlertsLatest();
+        cacheCloudBatch(batch);
+        return batch;
       } catch (err) {
-        console.warn("加载最新成交量预警批次失败", err);
+        console.warn("加载最新成交量预警批次失败，尝试本地缓存", err);
+        const local = loadLatestBatchFromLocal();
+        if (local.scan || local.alerts?.length) return local;
         throw err;
       }
     }
-    return { scan: null, alerts: [] };
+    return loadLatestBatchFromLocal();
+  }
+
+  async function loadBatchHistory({ limit = 30, offset = 0 } = {}) {
+    const useCloud = global.Ts12Api?.isEnabled?.() && !isLocalFileMode();
+    if (useCloud) {
+      try {
+        const res = await global.Ts12Api.getVolumeAlertHistory({ limit, offset });
+        for (const batch of res?.batches || []) {
+          upsertLocalBatch(batch);
+        }
+        return res;
+      } catch (err) {
+        console.warn("加载成交量预警历史失败，尝试本地缓存", err);
+        const local = listLocalBatchHistory({ limit, offset });
+        if (local.total) return local;
+        throw err;
+      }
+    }
+    return listLocalBatchHistory({ limit, offset });
   }
 
   global.Ts12VolumeAlerts = {
@@ -381,6 +559,11 @@
     formatAggregatedRatios,
     formatAggregatedAvgVolumes,
     formatAggregatedChipText,
+    readLocalAlerts,
+    readLocalBatches,
+    listLocalBatchHistory,
+    loadLatestBatchFromLocal,
+    isLocalFileMode,
     formatAlertTime,
     getLatestClosed4hOpenTime,
     getNext4hCloseMs,
@@ -390,5 +573,6 @@
     runTodayScanInBrowser,
     runMissingScanInBrowser,
     loadLatestBatch,
+    loadBatchHistory,
   };
 })(typeof window !== "undefined" ? window : globalThis);

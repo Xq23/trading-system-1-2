@@ -330,17 +330,18 @@
           }
           let batch = [];
           let nextTotal = total;
-          if (Ts12Api?.isEnabled?.()) {
-            const res = await Ts12Api.getVolumeAlertHistory({ limit: PAGE_SIZE, offset });
-            batch = Array.isArray(res?.batches) ? res.batches : [];
-            nextTotal = Number(res?.total) || batch.length;
-          }
+          const res = await Ts12VolumeAlerts.loadBatchHistory({ limit: PAGE_SIZE, offset });
+          batch = Array.isArray(res?.batches) ? res.batches : [];
+          nextTotal = Number(res?.total) || batch.length;
           batches = reset ? batch : batches.concat(batch);
           total = nextTotal;
           offset = batches.length;
           await updateCatchupHint();
+          const localHint = Ts12VolumeAlerts.isLocalFileMode() ? " · 本地缓存" : "";
           if (!statusEl.classList.contains("hint") && !statusEl.classList.contains("error")) {
-            statusEl.textContent = batches.length ? `共 ${total} 个检测批次` : "暂无检测记录";
+            statusEl.textContent = batches.length
+              ? `共 ${total} 个检测批次${localHint}`
+              : `暂无检测记录${localHint}`;
           }
           renderBatches();
         } catch (err) {

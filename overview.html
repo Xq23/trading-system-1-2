@@ -97,6 +97,14 @@
       .user-session button:hover {
         background: #1d2a45;
       }
+      .header-nav-link {
+        color: #8eb4ff;
+        text-decoration: none;
+        font-size: 12px;
+      }
+      .header-nav-link:hover {
+        text-decoration: underline;
+      }
       .symbol-editor {
         display: grid;
         grid-template-columns: minmax(180px, 280px) auto 1fr;
@@ -244,6 +252,9 @@
       }
       .volume-alert-status.error {
         color: #ff9090;
+      }
+      .volume-alert-status.hint {
+        color: #9eb0d8;
       }
       .volume-alert-link {
         color: #8eb4ff;
@@ -750,6 +761,7 @@
           <div id="pair-info" class="pair-info">BTC/USDT 永续合约（币安） | 最新 --</div>
           <div class="user-session">
             <span id="user-display"></span>
+            <a class="header-nav-link" href="trade-records.html">交易记录</a>
             <button type="button" id="logout-btn">退出登录</button>
           </div>
           <div class="symbol-group-row">
@@ -2130,14 +2142,28 @@
       }
 
       async function loadVolumeAlertPanel() {
+        volumeAlertStatusEl.classList.remove("hint");
         try {
           const batch = await Ts12VolumeAlerts.loadLatestBatch();
           volumeAlertScanMeta = batch?.scan || null;
           volumeAlertCache = Array.isArray(batch?.alerts) ? batch.alerts : [];
           renderVolumeAlertResults();
-          updateVolumeAlertStatus();
+          if (Ts12VolumeAlerts.isLocalFileMode()) {
+            volumeAlertStatusEl.textContent = volumeAlertCache.length
+              ? "本地缓存 · 最新一批预警"
+              : "本地模式 · 暂无缓存，可去历史页扫描";
+            volumeAlertStatusEl.classList.add("hint");
+            volumeAlertStatusEl.classList.remove("error");
+          } else {
+            updateVolumeAlertStatus();
+          }
         } catch (err) {
-          updateVolumeAlertStatus(String(err?.message || err), true);
+          const msg = String(err?.message || err);
+          if (msg === "Failed to fetch") {
+            updateVolumeAlertStatus("无法连接云端 API，请检查网络或用线上地址打开", true);
+          } else {
+            updateVolumeAlertStatus(msg, true);
+          }
         }
       }
 

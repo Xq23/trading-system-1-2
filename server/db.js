@@ -388,6 +388,35 @@ export function computeRiskRewardRatio(entryPrice, takeProfitPrice, stopLossPric
   return reward / risk;
 }
 
+function encodeTradeResult(type, amount) {
+  const t = String(type || "").trim().toLowerCase();
+  if (t !== "profit" && t !== "loss") return "";
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n < 0) return { error: "请填写有效的盈亏金额" };
+  return JSON.stringify({ type: t, amount: n });
+}
+
+function decodeTradeResult(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) {
+    return { tradeResult: "", tradeResultType: null, tradeResultAmount: null };
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && (parsed.type === "profit" || parsed.type === "loss") && Number.isFinite(Number(parsed.amount))) {
+      const amount = Number(parsed.amount);
+      return {
+        tradeResult: text,
+        tradeResultType: parsed.type,
+        tradeResultAmount: amount,
+      };
+    }
+  } catch {
+    /* legacy plain text */
+  }
+  return { tradeResult: text, tradeResultType: null, tradeResultAmount: null };
+}
+
 function normalizeTradeRecordInput(raw) {
   const exchangeSymbol = String(raw?.exchangeSymbol || raw?.exchange_symbol || "")
     .trim()
@@ -396,8 +425,20 @@ function normalizeTradeRecordInput(raw) {
   const entryPrice = Number(raw?.entryPrice ?? raw?.entry_price);
   const takeProfitPrice = Number(raw?.takeProfitPrice ?? raw?.take_profit_price);
   const stopLossPrice = Number(raw?.stopLossPrice ?? raw?.stop_loss_price);
-  const tradeResult = String(raw?.tradeResult ?? raw?.trade_result ?? "").trim();
   const review = String(raw?.review ?? "").trim();
+  const resultType = String(raw?.tradeResultType ?? raw?.trade_result_type ?? "").trim().toLowerCase();
+  const resultAmountRaw = raw?.tradeResultAmount ?? raw?.trade_result_amount;
+  const hasType = resultType === "profit" || resultType === "loss";
+  const hasAmount =
+    resultAmountRaw !== "" && resultAmountRaw != null && String(resultAmountRaw).trim() !== "";
+  let tradeResult = "";
+  if (hasType || hasAmount) {
+    if (!hasType) return { error: "请选择盈利或亏损" };
+    if (!hasAmount) return { error: "请填写盈亏金额" };
+    const encoded = encodeTradeResult(resultType, resultAmountRaw);
+    if (encoded?.error) return encoded;
+    tradeResult = encoded;
+  }
   if (!exchangeSymbol) return { error: "请填写交易币种" };
   if (![entryPrice, takeProfitPrice, stopLossPrice].every(Number.isFinite)) {
     return { error: "入场价、止盈价、止损价须为有效数字" };
@@ -418,6 +459,7 @@ function normalizeTradeRecordInput(raw) {
 
 function mapTradeRecordRow(row) {
   if (!row) return null;
+  const decoded = decodeTradeResult(row.tradeResult);
   return {
     id: row.id,
     exchangeSymbol: row.exchangeSymbol,
@@ -426,7 +468,9 @@ function mapTradeRecordRow(row) {
     takeProfitPrice: row.takeProfitPrice,
     stopLossPrice: row.stopLossPrice,
     riskRewardRatio: row.riskRewardRatio,
-    tradeResult: row.tradeResult,
+    tradeResult: decoded.tradeResult,
+    tradeResultType: decoded.tradeResultType,
+    tradeResultAmount: decoded.tradeResultAmount,
     review: row.review,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

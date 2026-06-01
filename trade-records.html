@@ -19,7 +19,7 @@
         color: #dbe6ff;
       }
       .wrap {
-        max-width: 1080px;
+        max-width: 1440px;
         margin: 0 auto;
         padding: 16px 14px 28px;
       }
@@ -59,12 +59,18 @@
         opacity: 0.55;
         cursor: not-allowed;
       }
+      .main-grid {
+        display: grid;
+        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+      }
       .panel {
         border: 1px solid #2d3b59;
         border-radius: 10px;
         background: #0d1527;
         overflow: hidden;
-        margin-bottom: 14px;
+        min-height: 0;
       }
       .panel-title {
         padding: 10px 12px;
@@ -75,12 +81,9 @@
       }
       .form-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px 12px;
+        grid-template-columns: 1fr;
+        gap: 10px;
         padding: 12px;
-      }
-      .form-grid .full {
-        grid-column: 1 / -1;
       }
       label {
         display: flex;
@@ -90,7 +93,8 @@
         color: #9eb0d8;
       }
       input,
-      textarea {
+      textarea,
+      select {
         width: 100%;
         background: #162035;
         color: #dbe6ff;
@@ -108,12 +112,26 @@
         color: #ffc971;
         background: #131d33;
       }
+      .result-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
       .form-actions {
-        grid-column: 1 / -1;
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
         align-items: center;
+        padding-top: 4px;
+      }
+      .form-actions button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 13px;
+        cursor: pointer;
       }
       .form-actions button.primary {
         background: #2d4a8a;
@@ -122,14 +140,33 @@
       .form-actions button.primary:hover:not(:disabled) {
         background: #3a5aa0;
       }
+      .form-actions button:hover:not(:disabled) {
+        background: #1d2a45;
+      }
+      .form-actions button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .list-panel {
+        display: flex;
+        flex-direction: column;
+        min-height: 480px;
+        max-height: calc(100vh - 120px);
+      }
       .status {
         padding: 10px 12px;
         font-size: 13px;
         color: #9eb0d8;
         border-bottom: 1px solid #1f2f4e;
+        flex-shrink: 0;
       }
       .status.error {
         color: #ff9090;
+      }
+      .table-scroll {
+        flex: 1;
+        overflow: auto;
+        min-height: 0;
       }
       table {
         width: 100%;
@@ -148,6 +185,9 @@
         font-weight: 600;
         background: #0d1527;
         white-space: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 1;
       }
       tr:last-child td {
         border-bottom: none;
@@ -159,8 +199,18 @@
         color: #ffc971;
         font-weight: 600;
       }
+      .result-profit {
+        color: #6ee7a8;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .result-loss {
+        color: #ff9090;
+        font-weight: 600;
+        white-space: nowrap;
+      }
       .cell-text {
-        max-width: 160px;
+        max-width: 140px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -199,13 +249,30 @@
         gap: 10px;
         padding: 10px 12px;
         border-top: 1px solid #1f2f4e;
+        flex-shrink: 0;
       }
-      @media (max-width: 720px) {
-        .form-grid {
+      .foot button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .foot button:hover:not(:disabled) {
+        background: #1d2a45;
+      }
+      .foot button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      @media (max-width: 960px) {
+        .main-grid {
           grid-template-columns: 1fr;
         }
-        .cell-text {
-          max-width: 100px;
+        .list-panel {
+          max-height: none;
         }
       }
     </style>
@@ -219,61 +286,70 @@
         <button type="button" id="reload-btn">刷新</button>
       </div>
 
-      <div class="panel">
-        <div class="panel-title" id="form-title">新增记录</div>
-        <form id="record-form" class="form-grid">
-          <label>
-            交易币种
-            <input id="f-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
-          </label>
-          <label>
-            入场价格
-            <input id="f-entry" type="number" step="any" min="0" required />
-          </label>
-          <label>
-            止盈价
-            <input id="f-tp" type="number" step="any" min="0" required />
-          </label>
-          <label>
-            止损价
-            <input id="f-sl" type="number" step="any" min="0" required />
-          </label>
-          <label>
-            盈亏比（自动）
-            <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
-          </label>
-          <label class="full">
-            入场条件
-            <textarea id="f-condition" placeholder="如：4h 收线突破 VAH + 放量"></textarea>
-          </label>
-          <label class="full">
-            交易结果
-            <textarea id="f-result" placeholder="如：止盈离场 / 止损 / 未触发"></textarea>
-          </label>
-          <label class="full">
-            复盘
-            <textarea id="f-review" placeholder="事后总结、可改进点"></textarea>
-          </label>
-          <div class="form-actions">
-            <button type="submit" class="primary" id="submit-btn">保存</button>
-            <button type="button" id="cancel-edit-btn" hidden>取消编辑</button>
-          </div>
-        </form>
-      </div>
+      <div class="main-grid">
+        <div class="panel">
+          <div class="panel-title" id="form-title">新增记录</div>
+          <form id="record-form" class="form-grid">
+            <label>
+              交易币种
+              <input id="f-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
+            </label>
+            <label>
+              入场价格
+              <input id="f-entry" type="number" step="any" min="0" required />
+            </label>
+            <label>
+              止盈价
+              <input id="f-tp" type="number" step="any" min="0" required />
+            </label>
+            <label>
+              止损价
+              <input id="f-sl" type="number" step="any" min="0" required />
+            </label>
+            <label>
+              盈亏比（自动）
+              <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
+            </label>
+            <label>
+              入场条件
+              <textarea id="f-condition" placeholder="如：4h 收线突破 VAH + 放量"></textarea>
+            </label>
+            <label>
+              交易结果
+              <div class="result-row">
+                <select id="f-result-type">
+                  <option value="">未结算</option>
+                  <option value="profit">盈利</option>
+                  <option value="loss">亏损</option>
+                </select>
+                <input id="f-result-amount" type="number" step="any" min="0" placeholder="金额 (USDT)" />
+              </div>
+            </label>
+            <label>
+              复盘
+              <textarea id="f-review" placeholder="事后总结、可改进点"></textarea>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary" id="submit-btn">保存</button>
+              <button type="button" id="cancel-edit-btn" hidden>取消编辑</button>
+            </div>
+          </form>
+        </div>
 
-      <div class="panel">
-        <div id="status" class="status">加载中…</div>
-        <div id="table-wrap"></div>
-        <div class="foot">
-          <span id="page-info"></span>
-          <button type="button" id="load-more-btn" disabled>加载更多</button>
+        <div class="panel list-panel">
+          <div id="status" class="status">加载中…</div>
+          <div id="table-wrap" class="table-scroll"></div>
+          <div class="foot">
+            <span id="page-info"></span>
+            <button type="button" id="load-more-btn" disabled>加载更多</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <script src="scripts/ts12-api-config.js"></script>
-    <script src="scripts/ts12-api-client.js"></script>
-    <script src="scripts/ts12-auth.js"></script>
+    <script src="scripts/ts12-api-config.js?v=20260521"></script>
+    <script src="scripts/ts12-api-client.js?v=20260521"></script>
+    <script src="scripts/ts12-auth.js?v=20260521"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -295,7 +371,8 @@
         sl: document.getElementById("f-sl"),
         rr: document.getElementById("f-rr"),
         condition: document.getElementById("f-condition"),
-        result: document.getElementById("f-result"),
+        resultType: document.getElementById("f-result-type"),
+        resultAmount: document.getElementById("f-result-amount"),
         review: document.getElementById("f-review"),
       };
 
@@ -356,6 +433,35 @@
         return s;
       }
 
+      function formatAmount(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return "--";
+        if (n >= 1000) return n.toFixed(2);
+        if (n >= 1) return n.toFixed(2);
+        return n.toFixed(4);
+      }
+
+      function formatTradeResult(record) {
+        const type = record.tradeResultType;
+        const amount = record.tradeResultAmount;
+        if (type === "profit" && Number.isFinite(Number(amount))) {
+          return {
+            html: `<span class="result-profit">盈利 +${formatAmount(amount)}</span>`,
+            text: `盈利 +${formatAmount(amount)} USDT`,
+          };
+        }
+        if (type === "loss" && Number.isFinite(Number(amount))) {
+          return {
+            html: `<span class="result-loss">亏损 -${formatAmount(amount)}</span>`,
+            text: `亏损 -${formatAmount(amount)} USDT`,
+          };
+        }
+        if (record.tradeResult && !type) {
+          return { html: escapeHtml(record.tradeResult), text: record.tradeResult };
+        }
+        return { html: "--", text: "" };
+      }
+
       function updateRiskRewardField() {
         const rr = computeRiskReward(fields.entry.value, fields.tp.value, fields.sl.value);
         fields.rr.value = rr == null ? "" : formatRatio(rr);
@@ -365,6 +471,8 @@
         editingId = null;
         formEl.reset();
         fields.rr.value = "";
+        fields.resultType.value = "";
+        fields.resultAmount.value = "";
         formTitleEl.textContent = "新增记录";
         submitBtn.textContent = "保存";
         cancelEditBtn.hidden = true;
@@ -377,13 +485,16 @@
         fields.tp.value = record.takeProfitPrice ?? "";
         fields.sl.value = record.stopLossPrice ?? "";
         fields.condition.value = record.entryCondition || "";
-        fields.result.value = record.tradeResult || "";
+        fields.resultType.value = record.tradeResultType || "";
+        fields.resultAmount.value =
+          record.tradeResultAmount != null && Number.isFinite(Number(record.tradeResultAmount))
+            ? record.tradeResultAmount
+            : "";
         fields.review.value = record.review || "";
         updateRiskRewardField();
         formTitleEl.textContent = "编辑记录";
         submitBtn.textContent = "更新";
         cancelEditBtn.hidden = false;
-        window.scrollTo({ top: 0, behavior: "smooth" });
       }
 
       function getFormPayload() {
@@ -393,14 +504,15 @@
           entryPrice: Number(fields.entry.value),
           takeProfitPrice: Number(fields.tp.value),
           stopLossPrice: Number(fields.sl.value),
-          tradeResult: fields.result.value.trim(),
+          tradeResultType: fields.resultType.value,
+          tradeResultAmount: fields.resultAmount.value,
           review: fields.review.value.trim(),
         };
       }
 
       function renderTable() {
         if (!records.length) {
-          tableWrapEl.innerHTML = '<div class="empty">暂无交易记录，在上方表单添加第一条。</div>';
+          tableWrapEl.innerHTML = '<div class="empty">暂无交易记录，在左侧表单添加第一条。</div>';
           return;
         }
         tableWrapEl.innerHTML = `<table>
@@ -409,8 +521,9 @@
             <th>入场条件</th><th>结果</th><th>复盘</th><th></th>
           </tr></thead>
           <tbody>${records
-            .map(
-              (r) => `<tr>
+            .map((r) => {
+              const result = formatTradeResult(r);
+              return `<tr>
               <td>${formatTime(r.updatedAt || r.createdAt)}</td>
               <td class="sym">${formatSymbol(r.exchangeSymbol)}</td>
               <td>${formatPrice(r.entryPrice)}</td>
@@ -418,14 +531,14 @@
               <td>${formatPrice(r.stopLossPrice)}</td>
               <td class="ratio">${formatRatio(r.riskRewardRatio)}</td>
               <td class="cell-text" title="${escapeHtml(r.entryCondition || "")}">${escapeHtml(r.entryCondition || "--")}</td>
-              <td class="cell-text" title="${escapeHtml(r.tradeResult || "")}">${escapeHtml(r.tradeResult || "--")}</td>
+              <td title="${escapeHtml(result.text)}">${result.html}</td>
               <td class="cell-text" title="${escapeHtml(r.review || "")}">${escapeHtml(r.review || "--")}</td>
               <td><div class="row-actions">
                 <button type="button" data-edit="${r.id}">编辑</button>
                 <button type="button" class="danger" data-del="${r.id}">删除</button>
               </div></td>
-            </tr>`
-            )
+            </tr>`;
+            })
             .join("")}</tbody></table>`;
       }
 
@@ -453,6 +566,9 @@
           if (reset) {
             offset = 0;
             records = [];
+          }
+          if (typeof Ts12Api?.getTradeRecords !== "function") {
+            throw new Error("页面脚本版本过旧，请强制刷新（Mac: Cmd+Shift+R）");
           }
           const res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset });
           const batch = Array.isArray(res?.records) ? res.records : [];

@@ -203,11 +203,11 @@
       </div>
     </div>
 
-    <script src="scripts/ts12-api-config.js"></script>
-    <script src="scripts/ts12-api-client.js"></script>
-    <script src="scripts/ts12-auth.js"></script>
-    <script src="scripts/ts12-binance-futures.js"></script>
-    <script src="scripts/ts12-volume-alerts.js"></script>
+    <script src="scripts/ts12-api-config.js?v=20260521"></script>
+    <script src="scripts/ts12-api-client.js?v=20260521"></script>
+    <script src="scripts/ts12-auth.js?v=20260521"></script>
+    <script src="scripts/ts12-binance-futures.js?v=20260521"></script>
+    <script src="scripts/ts12-volume-alerts.js?v=20260521"></script>
     <script>
       Ts12Auth.requireLogin();
       const PAGE_SIZE = 20;
@@ -337,7 +337,11 @@
           total = nextTotal;
           offset = batches.length;
           await updateCatchupHint();
-          const localHint = Ts12VolumeAlerts.isLocalFileMode() ? " · 本地缓存" : "";
+          const localHint =
+            typeof Ts12VolumeAlerts.isLocalFileMode === "function" &&
+            Ts12VolumeAlerts.isLocalFileMode()
+              ? " · 本地缓存"
+              : "";
           if (!statusEl.classList.contains("hint") && !statusEl.classList.contains("error")) {
             statusEl.textContent = batches.length
               ? `共 ${total} 个检测批次${localHint}`

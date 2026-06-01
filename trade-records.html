@@ -59,11 +59,12 @@
         opacity: 0.55;
         cursor: not-allowed;
       }
-      .main-grid {
-        display: grid;
-        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-        gap: 14px;
-        align-items: start;
+      .head button.primary {
+        background: #2d4a8a;
+        border-color: #4c72ff;
+      }
+      .head button.primary:hover:not(:disabled) {
+        background: #3a5aa0;
       }
       .panel {
         border: 1px solid #2d3b59;
@@ -81,9 +82,12 @@
       }
       .form-grid {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 10px;
-        padding: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 12px;
+        padding: 14px 16px 16px;
+      }
+      .form-grid .span-2 {
+        grid-column: 1 / -1;
       }
       label {
         display: flex;
@@ -150,7 +154,7 @@
       .list-panel {
         display: flex;
         flex-direction: column;
-        min-height: 480px;
+        min-height: calc(100vh - 120px);
         max-height: calc(100vh - 120px);
       }
       .status {
@@ -385,12 +389,80 @@
         font-size: 22px;
         cursor: pointer;
       }
-      @media (max-width: 960px) {
-        .main-grid {
+      .modal {
+        position: fixed;
+        inset: 0;
+        z-index: 900;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      .modal[hidden] {
+        display: none !important;
+      }
+      .modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.62);
+      }
+      .modal-dialog {
+        position: relative;
+        width: min(640px, 100%);
+        max-height: min(92vh, 860px);
+        border: 1px solid #2d3b59;
+        border-radius: 12px;
+        background: #0d1527;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+      }
+      .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #1f2f4e;
+        background: #111b2f;
+        flex-shrink: 0;
+      }
+      .modal-header h2 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .modal-close {
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 8px;
+        background: #162035;
+        color: #dbe6ff;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .modal-close:hover {
+        background: #1d2a45;
+      }
+      .modal-body {
+        overflow: auto;
+        min-height: 0;
+      }
+      @media (max-width: 640px) {
+        .form-grid {
           grid-template-columns: 1fr;
         }
+        .form-grid .span-2 {
+          grid-column: auto;
+        }
+      }
+      @media (max-width: 960px) {
         .list-panel {
           max-height: none;
+          min-height: 480px;
         }
       }
     </style>
@@ -401,16 +473,36 @@
         <h1>交易记录</h1>
         <span class="sub">与登录账号绑定 · 盈亏比根据入场/止盈/止损自动计算</span>
         <a href="overview.html">返回概览</a>
+        <button type="button" id="add-btn" class="primary">新增记录</button>
         <button type="button" id="reload-btn">刷新</button>
       </div>
 
-      <div class="main-grid">
-        <div class="panel">
-          <div class="panel-title" id="form-title">新增记录</div>
+      <div class="panel list-panel">
+        <div id="status" class="status">加载中…</div>
+        <div id="table-wrap" class="table-scroll"></div>
+        <div class="foot">
+          <span id="page-info"></span>
+          <button type="button" id="load-more-btn" disabled>加载更多</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="record-modal" class="modal" hidden>
+      <div class="modal-backdrop" id="modal-backdrop"></div>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="form-title">
+        <div class="modal-header">
+          <h2 id="form-title">新增记录</h2>
+          <button type="button" class="modal-close" id="modal-close" aria-label="关闭">×</button>
+        </div>
+        <div class="modal-body">
           <form id="record-form" class="form-grid">
             <label>
               交易币种
               <input id="f-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
+            </label>
+            <label>
+              盈亏比（自动）
+              <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
             </label>
             <label>
               入场价格
@@ -425,20 +517,6 @@
               <input id="f-sl" type="number" step="any" min="0" required />
             </label>
             <label>
-              盈亏比（自动）
-              <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
-            </label>
-            <label class="rich-field">
-              入场条件
-              <textarea id="f-condition" placeholder="如：4h 收线突破 VAH + 放量"></textarea>
-              <div class="image-toolbar">
-                <button type="button" id="f-condition-add-img">添加图片</button>
-                <span class="image-hint">支持 Ctrl+V 粘贴截图 · 最多 6 张</span>
-                <input id="f-condition-file" type="file" accept="image/*" multiple hidden />
-              </div>
-              <div id="f-condition-images" class="image-strip"></div>
-            </label>
-            <label>
               交易结果
               <div class="result-row">
                 <select id="f-result-type">
@@ -449,7 +527,17 @@
                 <input id="f-result-amount" type="number" step="any" min="0" placeholder="金额 (USDT)" />
               </div>
             </label>
-            <label class="rich-field">
+            <label class="rich-field span-2">
+              入场条件
+              <textarea id="f-condition" placeholder="如：4h 收线突破 VAH + 放量"></textarea>
+              <div class="image-toolbar">
+                <button type="button" id="f-condition-add-img">添加图片</button>
+                <span class="image-hint">支持 Ctrl+V 粘贴截图 · 最多 6 张</span>
+                <input id="f-condition-file" type="file" accept="image/*" multiple hidden />
+              </div>
+              <div id="f-condition-images" class="image-strip"></div>
+            </label>
+            <label class="rich-field span-2">
               复盘
               <textarea id="f-review" placeholder="事后总结、可改进点"></textarea>
               <div class="image-toolbar">
@@ -459,20 +547,11 @@
               </div>
               <div id="f-review-images" class="image-strip"></div>
             </label>
-            <div class="form-actions">
+            <div class="form-actions span-2">
               <button type="submit" class="primary" id="submit-btn">保存</button>
-              <button type="button" id="cancel-edit-btn" hidden>取消编辑</button>
+              <button type="button" id="cancel-edit-btn">取消</button>
             </div>
           </form>
-        </div>
-
-        <div class="panel list-panel">
-          <div id="status" class="status">加载中…</div>
-          <div id="table-wrap" class="table-scroll"></div>
-          <div class="foot">
-            <span id="page-info"></span>
-            <button type="button" id="load-more-btn" disabled>加载更多</button>
-          </div>
         </div>
       </div>
     </div>
@@ -482,9 +561,9 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260522"></script>
-    <script src="scripts/ts12-api-client.js?v=20260522"></script>
-    <script src="scripts/ts12-auth.js?v=20260522"></script>
+    <script src="scripts/ts12-api-config.js?v=20260523"></script>
+    <script src="scripts/ts12-api-client.js?v=20260523"></script>
+    <script src="scripts/ts12-auth.js?v=20260523"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -493,6 +572,10 @@
       const formTitleEl = document.getElementById("form-title");
       const submitBtn = document.getElementById("submit-btn");
       const cancelEditBtn = document.getElementById("cancel-edit-btn");
+      const modalEl = document.getElementById("record-modal");
+      const modalBackdropEl = document.getElementById("modal-backdrop");
+      const modalCloseEl = document.getElementById("modal-close");
+      const addBtn = document.getElementById("add-btn");
       const statusEl = document.getElementById("status");
       const tableWrapEl = document.getElementById("table-wrap");
       const pageInfoEl = document.getElementById("page-info");
@@ -550,8 +633,41 @@
         if (e.target === lightboxEl) closeLightbox();
       });
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && !lightboxEl.hidden) closeLightbox();
+        if (e.key !== "Escape") return;
+        if (!lightboxEl.hidden) {
+          closeLightbox();
+          return;
+        }
+        if (!modalEl.hidden) closeModal();
       });
+
+      function openModal() {
+        modalEl.hidden = false;
+        document.body.style.overflow = "hidden";
+        fields.symbol.focus();
+      }
+
+      function closeModal() {
+        modalEl.hidden = true;
+        document.body.style.overflow = "";
+        resetForm();
+      }
+
+      function openAddModal() {
+        resetForm();
+        formTitleEl.textContent = "新增记录";
+        submitBtn.textContent = "保存";
+        openModal();
+      }
+
+      function openEditModal(record) {
+        fillForm(record);
+        openModal();
+      }
+
+      modalCloseEl.addEventListener("click", closeModal);
+      modalBackdropEl.addEventListener("click", closeModal);
+      addBtn.addEventListener("click", openAddModal);
 
       function approxBase64Bytes(dataUrl) {
         const b64 = String(dataUrl || "").split(",")[1] || "";
@@ -761,9 +877,6 @@
         imageFields.review.images = [];
         renderImageStrip("condition");
         renderImageStrip("review");
-        formTitleEl.textContent = "新增记录";
-        submitBtn.textContent = "保存";
-        cancelEditBtn.hidden = true;
       }
 
       function fillForm(record) {
@@ -788,7 +901,6 @@
         updateRiskRewardField();
         formTitleEl.textContent = "编辑记录";
         submitBtn.textContent = "更新";
-        cancelEditBtn.hidden = false;
       }
 
       function getFormPayload() {
@@ -825,7 +937,8 @@
 
       function renderTable() {
         if (!records.length) {
-          tableWrapEl.innerHTML = '<div class="empty">暂无交易记录，在左侧表单添加第一条。</div>';
+          tableWrapEl.innerHTML =
+            '<div class="empty">暂无交易记录，点击右上角「新增记录」添加第一条。</div>';
           return;
         }
         tableWrapEl.innerHTML = `<table>
@@ -916,7 +1029,7 @@
           } else {
             await Ts12Api.createTradeRecord(payload);
           }
-          resetForm();
+          closeModal();
           await fetchPage(true);
         } catch (err) {
           alert(String(err?.message || err));
@@ -925,7 +1038,7 @@
         }
       });
 
-      cancelEditBtn.addEventListener("click", resetForm);
+      cancelEditBtn.addEventListener("click", closeModal);
       reloadBtn.addEventListener("click", () => fetchPage(true));
       loadMoreBtn.addEventListener("click", () => fetchPage(false));
 
@@ -939,14 +1052,14 @@
         const delId = e.target?.getAttribute?.("data-del");
         if (editId) {
           const record = records.find((r) => r.id === editId);
-          if (record) fillForm(record);
+          if (record) openEditModal(record);
           return;
         }
         if (delId) {
           if (!window.confirm("确定删除这条交易记录？")) return;
           try {
             await Ts12Api.deleteTradeRecord(delId);
-            if (editingId === delId) resetForm();
+            if (editingId === delId && !modalEl.hidden) closeModal();
             await fetchPage(true);
           } catch (err) {
             alert(String(err?.message || err));

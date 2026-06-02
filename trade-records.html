@@ -221,6 +221,14 @@
         color: #ff9090;
         font-weight: 600;
       }
+      .side-long {
+        color: #6ee7a8;
+        font-weight: 600;
+      }
+      .side-short {
+        color: #ff9090;
+        font-weight: 600;
+      }
       .cell-text {
         max-width: 140px;
         white-space: nowrap;
@@ -526,6 +534,14 @@
               <input id="f-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
             </label>
             <label>
+              方向
+              <select id="f-side">
+                <option value="">未选择</option>
+                <option value="long">做多</option>
+                <option value="short">做空</option>
+              </select>
+            </label>
+            <label class="span-2">
               盈亏比（自动）
               <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
             </label>
@@ -612,9 +628,9 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260528"></script>
-    <script src="scripts/ts12-api-client.js?v=20260528"></script>
-    <script src="scripts/ts12-auth.js?v=20260528"></script>
+    <script src="scripts/ts12-api-config.js?v=20260529"></script>
+    <script src="scripts/ts12-api-client.js?v=20260529"></script>
+    <script src="scripts/ts12-auth.js?v=20260529"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -635,6 +651,7 @@
 
       const fields = {
         symbol: document.getElementById("f-symbol"),
+        side: document.getElementById("f-side"),
         entry: document.getElementById("f-entry"),
         tp: document.getElementById("f-tp"),
         sl: document.getElementById("f-sl"),
@@ -928,6 +945,21 @@
         return { html: "--", text: "" };
       }
 
+      function formatPositionSide(v) {
+        if (v === "long") return { html: '<span class="side-long">多</span>', text: "做多" };
+        if (v === "short") return { html: '<span class="side-short">空</span>', text: "做空" };
+        return { html: "--", text: "" };
+      }
+
+      function formatSymbolCell(record) {
+        const sym = formatSymbol(record.exchangeSymbol);
+        const side = formatPositionSide(record.positionSide);
+        if (side.text) {
+          return `<span class="sym">${sym}</span> <span title="${escapeHtml(side.text)}">${side.html}</span>`;
+        }
+        return `<span class="sym">${sym}</span>`;
+      }
+
       function updateRiskRewardField() {
         const rr = computeRiskReward(fields.entry.value, fields.tp.value, fields.sl.value);
         fields.rr.value = rr == null ? "" : formatRatio(rr);
@@ -953,6 +985,7 @@
         editingId = null;
         formEl.reset();
         fields.rr.value = "";
+        fields.side.value = "";
         fields.resultType.value = "";
         fields.resultAmount.value = "";
         fields.reviewMatches.value = "";
@@ -966,6 +999,10 @@
       function fillForm(record) {
         editingId = record.id;
         fields.symbol.value = record.exchangeSymbol || "";
+        fields.side.value =
+          record.positionSide === "long" || record.positionSide === "short"
+            ? record.positionSide
+            : "";
         fields.entry.value = record.entryPrice ?? "";
         fields.tp.value = record.takeProfitPrice ?? "";
         fields.sl.value = record.stopLossPrice ?? "";
@@ -994,6 +1031,7 @@
       function getFormPayload() {
         return {
           exchangeSymbol: fields.symbol.value.trim(),
+          positionSide: fields.side.value,
           entryCondition: fields.condition.value.trim(),
           entryCondition30m: fields.condition30m.value.trim(),
           entryCondition4h: fields.condition4h.value.trim(),
@@ -1091,7 +1129,7 @@
               const result = formatTradeResult(r);
               return `<tr>
               <td>${formatTime(r.updatedAt || r.createdAt)}</td>
-              <td class="sym">${formatSymbol(r.exchangeSymbol)}</td>
+              <td>${formatSymbolCell(r)}</td>
               <td>${formatPrice(r.entryPrice)}</td>
               <td>${formatPrice(r.takeProfitPrice)}</td>
               <td>${formatPrice(r.stopLossPrice)}</td>

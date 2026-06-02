@@ -51,6 +51,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     exchange_symbol TEXT NOT NULL,
+    position_side TEXT NOT NULL DEFAULT '',
     entry_condition TEXT NOT NULL DEFAULT '',
     entry_condition_30m TEXT NOT NULL DEFAULT '',
     entry_condition_4h TEXT NOT NULL DEFAULT '',
@@ -97,6 +98,9 @@ try {
 } catch (_) {}
 try {
   db.exec(`ALTER TABLE trade_records ADD COLUMN review_matches_record TEXT NOT NULL DEFAULT ''`);
+} catch (_) {}
+try {
+  db.exec(`ALTER TABLE trade_records ADD COLUMN position_side TEXT NOT NULL DEFAULT ''`);
 } catch (_) {}
 
 db.exec(`
@@ -521,10 +525,18 @@ function normalizeReviewMatchesRecord(raw) {
   return "";
 }
 
+function normalizePositionSide(raw) {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (v === "long" || v === "做多" || v === "多") return "long";
+  if (v === "short" || v === "做空" || v === "空") return "short";
+  return "";
+}
+
 function normalizeTradeRecordInput(raw) {
   const exchangeSymbol = String(raw?.exchangeSymbol || raw?.exchange_symbol || "")
     .trim()
     .toUpperCase();
+  const positionSide = normalizePositionSide(raw?.positionSide ?? raw?.position_side);
   const entryFields = normalizeEntryConditionFields(raw);
   const entryPrice = Number(raw?.entryPrice ?? raw?.entry_price);
   const takeProfitPrice = Number(raw?.takeProfitPrice ?? raw?.take_profit_price);
@@ -558,6 +570,7 @@ function normalizeTradeRecordInput(raw) {
   if (riskRewardRatio == null) return { error: "无法计算盈亏比，请检查价格" };
   return {
     exchangeSymbol,
+    positionSide,
     ...entryFields,
     entryPrice,
     takeProfitPrice,
@@ -578,6 +591,7 @@ function mapTradeRecordRow(row) {
   return {
     id: row.id,
     exchangeSymbol: row.exchangeSymbol,
+    positionSide: normalizePositionSide(row.positionSide),
     ...entryFields,
     entryConditionImages: parseImageListFromDb(row.entryConditionImages),
     entryPrice: row.entryPrice,
@@ -602,6 +616,7 @@ export function listTradeRecords(userId, { limit = 50, offset = 0 } = {}) {
     .prepare(
       `SELECT id,
               exchange_symbol AS exchangeSymbol,
+              position_side AS positionSide,
               entry_condition AS entryCondition,
               entry_condition_30m AS entryCondition30m,
               entry_condition_4h AS entryCondition4h,
@@ -636,6 +651,7 @@ export function getTradeRecord(userId, id) {
     .prepare(
       `SELECT id,
               exchange_symbol AS exchangeSymbol,
+              position_side AS positionSide,
               entry_condition AS entryCondition,
               entry_condition_30m AS entryCondition30m,
               entry_condition_4h AS entryCondition4h,
@@ -666,15 +682,16 @@ export function createTradeRecord(userId, raw) {
   const id = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
   db.prepare(
     `INSERT INTO trade_records
-      (id, user_id, exchange_symbol, entry_condition, entry_condition_30m, entry_condition_4h,
+      (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
        entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
        stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
        entry_condition_images, review_images, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
     data.exchangeSymbol,
+    data.positionSide,
     data.entryCondition,
     data.entryCondition30m,
     data.entryCondition4h,
@@ -704,6 +721,7 @@ export function updateTradeRecord(userId, id, raw) {
   db.prepare(
     `UPDATE trade_records SET
        exchange_symbol = ?,
+       position_side = ?,
        entry_condition = ?,
        entry_condition_30m = ?,
        entry_condition_4h = ?,
@@ -722,6 +740,7 @@ export function updateTradeRecord(userId, id, raw) {
      WHERE user_id = ? AND id = ?`
   ).run(
     data.exchangeSymbol,
+    data.positionSide,
     data.entryCondition,
     data.entryCondition30m,
     data.entryCondition4h,

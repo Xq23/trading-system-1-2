@@ -428,7 +428,7 @@
     if (onProgress) onProgress({ phase: "fetching_symbols" });
     const info = await global.Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
     const map = global.Ts12BinanceFutures.buildMapFromExchangeInfo(info);
-    const symbols = global.Ts12BinanceFutures.listUsdtPerpetualSymbols(map, "all");
+    const symbols = global.Ts12BinanceFutures.listUsdtPerpetualSymbols(map, "crypto");
     if (!symbols.length) throw new Error("无可用 USDT 永续列表");
 
     const results = [];

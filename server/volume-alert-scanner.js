@@ -1,4 +1,7 @@
 import {
+  listCryptoUsdtPerpetualSymbols,
+} from "./binance-futures-symbols.js";
+import {
   BASELINE_BARS,
   FOUR_H_MS,
   SCAN_AFTER_CLOSE_MS,
@@ -31,7 +34,7 @@ const DEFAULT_FAPI_BASES = [
   "https://fapi2.binance.com",
   "https://fapi3.binance.com",
 ];
-const SYMBOL_CACHE_META = "volume_alert_symbol_cache";
+const SYMBOL_CACHE_META = "volume_alert_symbol_cache_crypto_v1";
 const LAST_ERROR_META = "volume_alert_last_error";
 
 let scanning = false;
@@ -129,17 +132,6 @@ async function fetchFromFapi(path) {
   }
 }
 
-function isTradableUsdtPerpetual(item) {
-  if (!item?.symbol || item?.status !== "TRADING") return false;
-  const ct = String(item.contractType || "");
-  const perpetualLike =
-    ct === "PERPETUAL" || ct === "TRADFI_PERPETUAL" || ct.endsWith("_PERPETUAL");
-  if (!perpetualLike) return false;
-  const quote = String(item.quoteAsset || "").toUpperCase();
-  if (quote) return quote === "USDT";
-  return String(item.symbol).toUpperCase().endsWith("USDT");
-}
-
 async function listUsdtPerpetualSymbols() {
   const now = Date.now();
   if (symbolCache.symbols.length && now - symbolCache.fetchedAt < 6 * 60 * 60 * 1000) {
@@ -148,11 +140,7 @@ async function listUsdtPerpetualSymbols() {
   try {
     scanProgress.phase = "fetching_symbols";
     const info = await fetchFromFapi("/fapi/v1/exchangeInfo");
-    const symbols = (info?.symbols || [])
-      .filter(isTradableUsdtPerpetual)
-      .map((item) => String(item.symbol).toUpperCase())
-      .filter((sym) => sym.endsWith("USDT"))
-      .sort((a, b) => a.localeCompare(b));
+    const symbols = listCryptoUsdtPerpetualSymbols(info);
     symbolCache = { symbols, fetchedAt: now };
     persistSymbolCache(symbolCache);
     clearScanError();
@@ -268,7 +256,7 @@ async function runPendingScans() {
 
 export function startVolumeAlertScheduler() {
   if (checkTimer) return;
-  console.log("[volume-alert] 服务端定时检测已启动（每 4h 收线 + 遗漏补扫）");
+  console.log("[volume-alert] 服务端定时检测已启动（每 4h 收线 + 遗漏补扫 · 仅原生数字货币）");
   checkTimer = setInterval(() => {
     void runPendingScans();
   }, CHECK_INTERVAL_MS);

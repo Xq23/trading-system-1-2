@@ -213,6 +213,14 @@
         font-weight: 600;
         white-space: nowrap;
       }
+      .match-yes {
+        color: #6ee7a8;
+        font-weight: 600;
+      }
+      .match-no {
+        color: #ff9090;
+        font-weight: 600;
+      }
       .cell-text {
         max-width: 140px;
         white-space: nowrap;
@@ -275,6 +283,23 @@
         display: flex;
         flex-direction: column;
         gap: 6px;
+      }
+      .field-group-label {
+        font-size: 12px;
+        color: #9eb0d8;
+      }
+      .condition-dim-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 10px;
+      }
+      .condition-dim-grid textarea {
+        min-height: 56px;
+      }
+      @media (max-width: 640px) {
+        .condition-dim-grid {
+          grid-template-columns: 1fr;
+        }
       }
       .image-toolbar {
         display: flex;
@@ -408,7 +433,7 @@
       }
       .modal-dialog {
         position: relative;
-        width: min(640px, 100%);
+        width: min(720px, 100%);
         max-height: min(92vh, 860px);
         border: 1px solid #2d3b59;
         border-radius: 12px;
@@ -528,7 +553,25 @@
               </div>
             </label>
             <label class="rich-field span-2">
-              入场条件
+              <span class="field-group-label">入场条件</span>
+              <div class="condition-dim-grid">
+                <label>
+                  1d 维度
+                  <textarea id="f-condition-1d" placeholder="如：年度趋势确认"></textarea>
+                </label>
+                <label>
+                  12h 维度
+                  <textarea id="f-condition-12h" placeholder="如：季度 VAL 支撑"></textarea>
+                </label>
+                <label>
+                  4h 维度
+                  <textarea id="f-condition-4h" placeholder="如：月内 POC 回踩"></textarea>
+                </label>
+                <label>
+                  30min 维度
+                  <textarea id="f-condition-30m" placeholder="如：周内 VAH 突破"></textarea>
+                </label>
+              </div>
               <textarea id="f-condition" placeholder="如：4h 收线突破 VAH + 放量"></textarea>
               <div class="image-toolbar">
                 <button type="button" id="f-condition-add-img">添加图片</button>
@@ -538,7 +581,15 @@
               <div id="f-condition-images" class="image-strip"></div>
             </label>
             <label class="rich-field span-2">
-              复盘
+              <span class="field-group-label">复盘</span>
+              <label>
+                是否符合交易记录
+                <select id="f-review-matches">
+                  <option value="">未选择</option>
+                  <option value="yes">是</option>
+                  <option value="no">否</option>
+                </select>
+              </label>
               <textarea id="f-review" placeholder="事后总结、可改进点"></textarea>
               <div class="image-toolbar">
                 <button type="button" id="f-review-add-img">添加图片</button>
@@ -561,9 +612,9 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260523"></script>
-    <script src="scripts/ts12-api-client.js?v=20260523"></script>
-    <script src="scripts/ts12-auth.js?v=20260523"></script>
+    <script src="scripts/ts12-api-config.js?v=20260528"></script>
+    <script src="scripts/ts12-api-client.js?v=20260528"></script>
+    <script src="scripts/ts12-auth.js?v=20260528"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -589,8 +640,13 @@
         sl: document.getElementById("f-sl"),
         rr: document.getElementById("f-rr"),
         condition: document.getElementById("f-condition"),
+        condition30m: document.getElementById("f-condition-30m"),
+        condition4h: document.getElementById("f-condition-4h"),
+        condition12h: document.getElementById("f-condition-12h"),
+        condition1d: document.getElementById("f-condition-1d"),
         resultType: document.getElementById("f-result-type"),
         resultAmount: document.getElementById("f-result-amount"),
+        reviewMatches: document.getElementById("f-review-matches"),
         review: document.getElementById("f-review"),
       };
 
@@ -600,20 +656,28 @@
       const lightboxImgEl = document.getElementById("lightbox-img");
       const lightboxCloseEl = document.getElementById("lightbox-close");
 
+      const conditionTextareas = [
+        fields.condition1d,
+        fields.condition12h,
+        fields.condition4h,
+        fields.condition30m,
+        fields.condition,
+      ];
+
       const imageFields = {
         condition: {
           images: [],
           stripEl: document.getElementById("f-condition-images"),
           fileEl: document.getElementById("f-condition-file"),
           addBtn: document.getElementById("f-condition-add-img"),
-          textarea: fields.condition,
+          textareas: conditionTextareas,
         },
         review: {
           images: [],
           stripEl: document.getElementById("f-review-images"),
           fileEl: document.getElementById("f-review-file"),
           addBtn: document.getElementById("f-review-add-img"),
-          textarea: fields.review,
+          textareas: [fields.review],
         },
       };
 
@@ -746,20 +810,22 @@
           field.fileEl.value = "";
           if (files.length) await addImagesToField(fieldKey, files);
         });
-        field.textarea.addEventListener("paste", async (e) => {
-          const items = e.clipboardData?.items;
-          if (!items) return;
-          const imageFiles = [];
-          for (const item of items) {
-            if (item.type.startsWith("image/")) {
-              const file = item.getAsFile();
-              if (file) imageFiles.push(file);
+        for (const textarea of field.textareas || []) {
+          textarea.addEventListener("paste", async (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            const imageFiles = [];
+            for (const item of items) {
+              if (item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file) imageFiles.push(file);
+              }
             }
-          }
-          if (!imageFiles.length) return;
-          e.preventDefault();
-          await addImagesToField(fieldKey, imageFiles);
-        });
+            if (!imageFiles.length) return;
+            e.preventDefault();
+            await addImagesToField(fieldKey, imageFiles);
+          });
+        }
         field.stripEl.addEventListener("click", (e) => {
           const removeKey = e.target?.getAttribute?.("data-remove");
           const idx = Number(e.target?.getAttribute?.("data-idx"));
@@ -867,12 +933,30 @@
         fields.rr.value = rr == null ? "" : formatRatio(rr);
       }
 
+      function clearConditionFields() {
+        fields.condition.value = "";
+        fields.condition30m.value = "";
+        fields.condition4h.value = "";
+        fields.condition12h.value = "";
+        fields.condition1d.value = "";
+      }
+
+      function fillConditionFields(record) {
+        fields.condition.value = record.entryCondition || "";
+        fields.condition30m.value = record.entryCondition30m || "";
+        fields.condition4h.value = record.entryCondition4h || "";
+        fields.condition12h.value = record.entryCondition12h || "";
+        fields.condition1d.value = record.entryCondition1d || "";
+      }
+
       function resetForm() {
         editingId = null;
         formEl.reset();
         fields.rr.value = "";
         fields.resultType.value = "";
         fields.resultAmount.value = "";
+        fields.reviewMatches.value = "";
+        clearConditionFields();
         imageFields.condition.images = [];
         imageFields.review.images = [];
         renderImageStrip("condition");
@@ -885,7 +969,7 @@
         fields.entry.value = record.entryPrice ?? "";
         fields.tp.value = record.takeProfitPrice ?? "";
         fields.sl.value = record.stopLossPrice ?? "";
-        fields.condition.value = record.entryCondition || "";
+        fillConditionFields(record);
         imageFields.condition.images = Array.isArray(record.entryConditionImages)
           ? [...record.entryConditionImages]
           : [];
@@ -894,6 +978,10 @@
         fields.resultAmount.value =
           record.tradeResultAmount != null && Number.isFinite(Number(record.tradeResultAmount))
             ? record.tradeResultAmount
+            : "";
+        fields.reviewMatches.value =
+          record.reviewMatchesRecord === "yes" || record.reviewMatchesRecord === "no"
+            ? record.reviewMatchesRecord
             : "";
         fields.review.value = record.review || "";
         imageFields.review.images = Array.isArray(record.reviewImages) ? [...record.reviewImages] : [];
@@ -907,15 +995,67 @@
         return {
           exchangeSymbol: fields.symbol.value.trim(),
           entryCondition: fields.condition.value.trim(),
+          entryCondition30m: fields.condition30m.value.trim(),
+          entryCondition4h: fields.condition4h.value.trim(),
+          entryCondition12h: fields.condition12h.value.trim(),
+          entryCondition1d: fields.condition1d.value.trim(),
           entryConditionImages: [...imageFields.condition.images],
           entryPrice: Number(fields.entry.value),
           takeProfitPrice: Number(fields.tp.value),
           stopLossPrice: Number(fields.sl.value),
           tradeResultType: fields.resultType.value,
           tradeResultAmount: fields.resultAmount.value,
+          reviewMatchesRecord: fields.reviewMatches.value,
           review: fields.review.value.trim(),
           reviewImages: [...imageFields.review.images],
         };
+      }
+
+      function formatReviewMatches(v) {
+        if (v === "yes") return { html: '<span class="match-yes">符合 · 是</span>', text: "符合 · 是" };
+        if (v === "no") return { html: '<span class="match-no">不符合 · 否</span>', text: "不符合 · 否" };
+        return { html: "", text: "" };
+      }
+
+      function formatReviewCell(record) {
+        const match = formatReviewMatches(record.reviewMatchesRecord);
+        const reviewText = String(record.review || "").trim();
+        const matchHtml = match.html
+          ? `<div class="cell-rich-text">${match.html}</div>`
+          : "";
+        const textHtml = reviewText
+          ? `<div class="cell-rich-text">${escapeHtml(reviewText)}</div>`
+          : !matchHtml
+            ? `<div class="cell-rich-text">--</div>`
+            : "";
+        const imgs = Array.isArray(record.reviewImages) ? record.reviewImages : [];
+        const thumbs = imgs.length
+          ? `<div class="cell-thumb-row">${imgs
+              .slice(0, 3)
+              .map(
+                (src) =>
+                  `<img src="${src}" alt="" data-preview="${src}" title="点击查看大图" />`
+              )
+              .join("")}${imgs.length > 3 ? `<span class="image-hint">+${imgs.length - 3}</span>` : ""}</div>`
+          : "";
+        return `<div class="cell-rich">${matchHtml}${textHtml}${thumbs}</div>`;
+      }
+
+      function formatEntryConditionCell(record) {
+        const parts = [];
+        const dims = [
+          ["1d", record.entryCondition1d],
+          ["12h", record.entryCondition12h],
+          ["4h", record.entryCondition4h],
+          ["30m", record.entryCondition30m],
+        ]
+          .filter(([, text]) => String(text || "").trim())
+          .map(([label, text]) => `${label}: ${text}`);
+        if (dims.length) parts.push(dims.join(" · "));
+        const general = String(record.entryCondition || "").trim();
+        if (general) parts.push(general);
+        const summary = parts.join(" · ") || "";
+        return formatRichCell(summary, record.entryConditionImages);
       }
 
       function formatRichCell(text, images) {
@@ -956,9 +1096,9 @@
               <td>${formatPrice(r.takeProfitPrice)}</td>
               <td>${formatPrice(r.stopLossPrice)}</td>
               <td class="ratio">${formatRatio(r.riskRewardRatio)}</td>
-              <td>${formatRichCell(r.entryCondition, r.entryConditionImages)}</td>
+              <td>${formatEntryConditionCell(r)}</td>
               <td title="${escapeHtml(result.text)}">${result.html}</td>
-              <td>${formatRichCell(r.review, r.reviewImages)}</td>
+              <td>${formatReviewCell(r)}</td>
               <td><div class="row-actions">
                 <button type="button" data-edit="${r.id}">编辑</button>
                 <button type="button" class="danger" data-del="${r.id}">删除</button>

@@ -277,7 +277,7 @@
         -webkit-overflow-scrolling: touch;
       }
       .volume-alert-results.empty::before {
-        content: "服务端每 4h 收线自动检测；此处显示最近一次检测结果";
+        content: "服务端每 4h 收线自动检测（仅原生数字货币）；此处显示最近一次检测结果";
         color: #5f739e;
         font-size: 11px;
         white-space: nowrap;
@@ -839,7 +839,7 @@
     <script src="scripts/ts12-auth.js?v=20260521"></script>
     <script src="scripts/ts12-symbol-prefs.js?v=20260521"></script>
     <script src="scripts/ts12-binance-futures.js?v=20260521"></script>
-    <script src="scripts/ts12-volume-alerts.js?v=20260521"></script>
+    <script src="scripts/ts12-volume-alerts.js?v=20260524"></script>
     <script>
       const authSession = Ts12Auth.requireLogin();
       const currentUserId = authSession.userId;
@@ -2136,7 +2136,7 @@
             : `最近检测 ${t} · 无异常`;
         } else {
           const next = new Date(Ts12VolumeAlerts.getNext4hCloseMs());
-          volumeAlertStatusEl.textContent = `服务端自动检测 · 下次 4h 收线 ${next.toLocaleTimeString()}`;
+          volumeAlertStatusEl.textContent = `服务端自动检测（原生币）· 下次 4h 收线 ${next.toLocaleTimeString()}`;
         }
         volumeAlertStatusEl.classList.toggle("error", isError);
       }

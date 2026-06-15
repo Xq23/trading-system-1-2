@@ -103,6 +103,25 @@ try {
   db.exec(`ALTER TABLE trade_records ADD COLUMN position_side TEXT NOT NULL DEFAULT ''`);
 } catch (_) {}
 
+try {
+  db.exec(`ALTER TABLE trade_plans ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'pending'`);
+} catch (_) {}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trade_plans (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    exchange_symbol TEXT NOT NULL,
+    plan_text TEXT NOT NULL DEFAULT '',
+    executed INTEGER NOT NULL DEFAULT 0,
+    trade_record_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_trade_plans_user ON trade_plans(user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_trade_plans_record ON trade_plans(trade_record_id);
+`);
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_volume_alerts_trigger ON volume_alerts(trigger_candle_open_time DESC);
 `);
@@ -763,8 +782,414 @@ export function updateTradeRecord(userId, id, raw) {
 }
 
 export function deleteTradeRecord(userId, id) {
+  db.prepare(`DELETE FROM trade_plans WHERE user_id = ? AND trade_record_id = ?`).run(userId, id);
   const info = db.prepare(`DELETE FROM trade_records WHERE user_id = ? AND id = ?`).run(userId, id);
   return info.changes > 0;
+}
+
+function normalizePlanCreateInput(raw) {
+  const exchangeSymbol = String(raw?.exchangeSymbol || raw?.exchange_symbol || "")
+    .trim()
+    .toUpperCase();
+  const planText = String(raw?.planText ?? raw?.plan_text ?? "").trim();
+  if (!exchangeSymbol) return { error: "请填写目标币种" };
+  if (!planText) return { error: "请填写交易计划" };
+  return { exchangeSymbol, planText };
+}
+
+function normalizeExecutionDecision(raw) {
+  const v = String(raw?.executionDecision ?? raw?.execution_decision ?? raw?.executed ?? "")
+    .trim()
+    .toLowerCase();
+  if (!v || v === "pending" || v === "observe" || v === "继续观察" || v === "待观察") return "pending";
+  if (v === "not_executed" || v === "no" || v === "false" || v === "0" || v === "不执行" || v === "skipped") {
+    return "not_executed";
+  }
+  if (v === "executed" || v === "yes" || v === "true" || v === "1" || v === "执行" || v === "execute") {
+    return "executed";
+  }
+  return null;
+}
+
+function normalizeTradePlanInput(raw) {
+  return normalizePlanCreateInput(raw);
+}
+
+function mapTradePlanRow(row) {
+  if (!row) return null;
+  let planStatus = String(row.planStatus || "").trim();
+  if (!planStatus) {
+    planStatus = row.executed ? "executed" : "pending";
+  }
+  return {
+    id: row.id,
+    exchangeSymbol: row.exchangeSymbol,
+    planText: row.planText,
+    executed: Boolean(row.executed),
+    planStatus,
+    tradeRecordId: row.tradeRecordId || null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function listTradePlans(userId, { limit = 50, offset = 0, executed } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  let where = "WHERE user_id = ?";
+  const params = [userId];
+  if (executed === true || executed === "1" || executed === "true") {
+    where += " AND executed = 1";
+  } else if (executed === false || executed === "0" || executed === "false") {
+    where += " AND executed = 0";
+  }
+  const plans = db
+    .prepare(
+      `SELECT id,
+              exchange_symbol AS exchangeSymbol,
+              plan_text AS planText,
+              executed,
+              COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
+              trade_record_id AS tradeRecordId,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM trade_plans
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(...params, safeLimit, safeOffset)
+    .map(mapTradePlanRow);
+  const total =
+    db.prepare(`SELECT COUNT(*) AS count FROM trade_plans ${where}`).get(...params)?.count || 0;
+  return { plans, total, limit: safeLimit, offset: safeOffset };
+}
+
+export function getTradePlan(userId, id) {
+  const row = db
+    .prepare(
+      `SELECT id,
+              exchange_symbol AS exchangeSymbol,
+              plan_text AS planText,
+              executed,
+              COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
+              trade_record_id AS tradeRecordId,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM trade_plans
+       WHERE user_id = ? AND id = ?`
+    )
+    .get(userId, id);
+  return mapTradePlanRow(row);
+}
+
+export function getTradePlanByRecordId(userId, recordId) {
+  const row = db
+    .prepare(
+      `SELECT id,
+              exchange_symbol AS exchangeSymbol,
+              plan_text AS planText,
+              executed,
+              COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
+              trade_record_id AS tradeRecordId,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM trade_plans
+       WHERE user_id = ? AND trade_record_id = ?`
+    )
+    .get(userId, recordId);
+  return mapTradePlanRow(row);
+}
+
+export function createTradePlan(userId, raw) {
+  const data = normalizePlanCreateInput(raw);
+  if (data.error) return data;
+  const now = Date.now();
+  const id = `tp_${now}_${Math.random().toString(36).slice(2, 10)}`;
+  db.prepare(
+    `INSERT INTO trade_plans
+      (id, user_id, exchange_symbol, plan_text, executed, plan_status, trade_record_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 0, 'pending', NULL, ?, ?)`
+  ).run(id, userId, data.exchangeSymbol, data.planText, now, now);
+  return { plan: getTradePlan(userId, id) };
+}
+
+export function createTradePlanWithRecord(userId, raw) {
+  const planData = normalizePlanCreateInput(raw);
+  if (planData.error) return planData;
+  const recordData = normalizeTradeRecordInput(raw);
+  if (recordData.error) return recordData;
+  if (planData.exchangeSymbol !== recordData.exchangeSymbol) {
+    recordData.exchangeSymbol = planData.exchangeSymbol;
+  }
+  const now = Date.now();
+  const planId = `tp_${now}_${Math.random().toString(36).slice(2, 10)}`;
+  const recordId = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO trade_records
+        (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
+         entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
+         stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
+         entry_condition_images, review_images, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      recordId,
+      userId,
+      recordData.exchangeSymbol,
+      recordData.positionSide,
+      recordData.entryCondition,
+      recordData.entryCondition30m,
+      recordData.entryCondition4h,
+      recordData.entryCondition12h,
+      recordData.entryCondition1d,
+      recordData.entryPrice,
+      recordData.takeProfitPrice,
+      recordData.stopLossPrice,
+      recordData.riskRewardRatio,
+      recordData.tradeResult,
+      recordData.review,
+      recordData.reviewMatchesRecord,
+      serializeImageList(recordData.entryConditionImages),
+      serializeImageList(recordData.reviewImages),
+      now,
+      now
+    );
+    db.prepare(
+      `INSERT INTO trade_plans
+        (id, user_id, exchange_symbol, plan_text, executed, plan_status, trade_record_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, 'executed', ?, ?, ?)`
+    ).run(planId, userId, planData.exchangeSymbol, planData.planText, recordId, now, now);
+  });
+  tx();
+  return {
+    plan: getTradePlan(userId, planId),
+    record: getTradeRecord(userId, recordId),
+  };
+}
+
+export function executeTradePlan(userId, planId, raw) {
+  const existing = getTradePlan(userId, planId);
+  if (!existing) return { error: "计划不存在" };
+  if (existing.executed || existing.planStatus === "executed") {
+    return { error: "该计划已执行" };
+  }
+  const planFields = normalizePlanCreateInput(raw);
+  if (planFields.error) return planFields;
+  const recordData = normalizeTradeRecordInput(raw);
+  if (recordData.error) return recordData;
+  recordData.exchangeSymbol = planFields.exchangeSymbol || existing.exchangeSymbol;
+  const now = Date.now();
+  const recordId = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO trade_records
+        (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
+         entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
+         stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
+         entry_condition_images, review_images, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      recordId,
+      userId,
+      recordData.exchangeSymbol,
+      recordData.positionSide,
+      recordData.entryCondition,
+      recordData.entryCondition30m,
+      recordData.entryCondition4h,
+      recordData.entryCondition12h,
+      recordData.entryCondition1d,
+      recordData.entryPrice,
+      recordData.takeProfitPrice,
+      recordData.stopLossPrice,
+      recordData.riskRewardRatio,
+      recordData.tradeResult,
+      recordData.review,
+      recordData.reviewMatchesRecord,
+      serializeImageList(recordData.entryConditionImages),
+      serializeImageList(recordData.reviewImages),
+      now,
+      now
+    );
+    db.prepare(
+      `UPDATE trade_plans SET
+         exchange_symbol = ?,
+         plan_text = ?,
+         executed = 1,
+         plan_status = 'executed',
+         trade_record_id = ?,
+         updated_at = ?
+       WHERE user_id = ? AND id = ?`
+    ).run(
+      planFields.exchangeSymbol,
+      planFields.planText,
+      recordId,
+      now,
+      userId,
+      planId
+    );
+  });
+  tx();
+  return {
+    plan: getTradePlan(userId, planId),
+    record: getTradeRecord(userId, recordId),
+  };
+}
+
+export function updateTradePlan(userId, id, raw) {
+  const existing = getTradePlan(userId, id);
+  if (!existing) return { error: "计划不存在" };
+  if (existing.executed || existing.planStatus === "executed") {
+    return { error: "已执行的计划不可编辑，请编辑对应交易记录" };
+  }
+  const data = normalizePlanCreateInput(raw);
+  if (data.error) return data;
+  const decision = normalizeExecutionDecision(raw);
+  if (decision === "executed") {
+    return { error: "选择执行请继续填写交易记录" };
+  }
+  if (decision === null) return { error: "请选择是否执行" };
+  const planStatus = decision === "not_executed" ? "not_executed" : "pending";
+  const now = Date.now();
+  db.prepare(
+    `UPDATE trade_plans SET
+       exchange_symbol = ?,
+       plan_text = ?,
+       plan_status = ?,
+       updated_at = ?
+     WHERE user_id = ? AND id = ?`
+  ).run(data.exchangeSymbol, data.planText, planStatus, now, userId, id);
+  return { plan: getTradePlan(userId, id) };
+}
+
+export function deleteTradePlan(userId, id) {
+  const existing = getTradePlan(userId, id);
+  if (!existing) return false;
+  if (existing.executed && existing.tradeRecordId) {
+    return false;
+  }
+  const info = db.prepare(`DELETE FROM trade_plans WHERE user_id = ? AND id = ?`).run(userId, id);
+  return info.changes > 0;
+}
+
+export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  const rows = db
+    .prepare(
+      `SELECT kind, id, exchangeSymbol, planText, executed, planStatus, planId,
+              positionSide, entryCondition, entryCondition30m, entryCondition4h, entryCondition12h, entryCondition1d,
+              entryPrice, takeProfitPrice, stopLossPrice, riskRewardRatio, tradeResult,
+              review, reviewMatchesRecord, entryConditionImages, reviewImages,
+              createdAt, updatedAt, sortAt
+       FROM (
+         SELECT 'plan' AS kind,
+                p.id AS id,
+                p.exchange_symbol AS exchangeSymbol,
+                p.plan_text AS planText,
+                p.executed AS executed,
+                COALESCE(p.plan_status, CASE WHEN p.executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
+                p.id AS planId,
+                '' AS positionSide,
+                '' AS entryCondition,
+                '' AS entryCondition30m,
+                '' AS entryCondition4h,
+                '' AS entryCondition12h,
+                '' AS entryCondition1d,
+                NULL AS entryPrice,
+                NULL AS takeProfitPrice,
+                NULL AS stopLossPrice,
+                NULL AS riskRewardRatio,
+                '' AS tradeResult,
+                '' AS review,
+                '' AS reviewMatchesRecord,
+                '[]' AS entryConditionImages,
+                '[]' AS reviewImages,
+                p.created_at AS createdAt,
+                p.updated_at AS updatedAt,
+                p.updated_at AS sortAt
+         FROM trade_plans p
+         WHERE p.user_id = ? AND p.executed = 0
+         UNION ALL
+         SELECT 'record' AS kind,
+                r.id AS id,
+                r.exchange_symbol AS exchangeSymbol,
+                COALESCE(p.plan_text, '') AS planText,
+                1 AS executed,
+                'executed' AS planStatus,
+                p.id AS planId,
+                r.position_side AS positionSide,
+                r.entry_condition AS entryCondition,
+                r.entry_condition_30m AS entryCondition30m,
+                r.entry_condition_4h AS entryCondition4h,
+                r.entry_condition_12h AS entryCondition12h,
+                r.entry_condition_1d AS entryCondition1d,
+                r.entry_price AS entryPrice,
+                r.take_profit_price AS takeProfitPrice,
+                r.stop_loss_price AS stopLossPrice,
+                r.risk_reward_ratio AS riskRewardRatio,
+                r.trade_result AS tradeResult,
+                r.review AS review,
+                r.review_matches_record AS reviewMatchesRecord,
+                r.entry_condition_images AS entryConditionImages,
+                r.review_images AS reviewImages,
+                r.created_at AS createdAt,
+                r.updated_at AS updatedAt,
+                r.updated_at AS sortAt
+         FROM trade_records r
+         LEFT JOIN trade_plans p ON p.trade_record_id = r.id AND p.user_id = r.user_id
+         WHERE r.user_id = ?
+       )
+       ORDER BY sortAt DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(userId, userId, safeLimit, safeOffset);
+  const planCount =
+    db.prepare(`SELECT COUNT(*) AS count FROM trade_plans WHERE user_id = ? AND executed = 0`).get(userId)
+      ?.count || 0;
+  const recordCount =
+    db.prepare(`SELECT COUNT(*) AS count FROM trade_records WHERE user_id = ?`).get(userId)?.count || 0;
+  const total = planCount + recordCount;
+  const items = rows.map((row) => {
+    if (row.kind === "plan") {
+      return {
+        kind: "plan",
+        id: row.id,
+        exchangeSymbol: row.exchangeSymbol,
+        planText: row.planText,
+        executed: false,
+        planStatus: row.planStatus || "pending",
+        tradeRecordId: null,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      };
+    }
+    const decoded = decodeTradeResult(row.tradeResult);
+    const entryFields = mapEntryConditionFieldsFromRow(row);
+    return {
+      kind: "record",
+      id: row.id,
+      exchangeSymbol: row.exchangeSymbol,
+      planText: row.planText || "",
+      planId: row.planId || null,
+      positionSide: normalizePositionSide(row.positionSide),
+      ...entryFields,
+      entryConditionImages: parseImageListFromDb(row.entryConditionImages),
+      entryPrice: row.entryPrice,
+      takeProfitPrice: row.takeProfitPrice,
+      stopLossPrice: row.stopLossPrice,
+      riskRewardRatio: row.riskRewardRatio,
+      tradeResult: decoded.tradeResult,
+      tradeResultType: decoded.tradeResultType,
+      tradeResultAmount: decoded.tradeResultAmount,
+      review: row.review,
+      reviewMatchesRecord: normalizeReviewMatchesRecord(row.reviewMatchesRecord),
+      reviewImages: parseImageListFromDb(row.reviewImages),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  });
+  return { items, total, limit: safeLimit, offset: safeOffset };
 }
 
 export default db;

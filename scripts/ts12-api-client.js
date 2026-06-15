@@ -129,11 +129,37 @@
     });
   }
 
-  async function getTradeRecords({ limit = 50, offset = 0 } = {}) {
+  async function getTradeRecords({ limit = 50, offset = 0, journal = false } = {}) {
     const q = new URLSearchParams();
     q.set("limit", String(limit));
     q.set("offset", String(offset));
+    if (journal) q.set("journal", "1");
     return apiFetch(`/api/trade-records?${q.toString()}`);
+  }
+
+  async function createTradePlan(payload) {
+    return apiFetch("/api/trade-plans", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function executeTradePlan(id, payload) {
+    return apiFetch(`/api/trade-plans/${encodeURIComponent(id)}/execute`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function updateTradePlan(id, payload) {
+    return apiFetch(`/api/trade-plans/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function deleteTradePlan(id) {
+    return apiFetch(`/api/trade-plans/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
   async function createTradeRecord(payload) {
@@ -173,6 +199,10 @@
     postVolumeAlertScanComplete,
     postVolumeAlertsBatch,
     getTradeRecords,
+    createTradePlan,
+    updateTradePlan,
+    executeTradePlan,
+    deleteTradePlan,
     createTradeRecord,
     updateTradeRecord,
     deleteTradeRecord,

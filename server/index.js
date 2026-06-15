@@ -22,6 +22,14 @@ import {
   createTradeRecord,
   updateTradeRecord,
   deleteTradeRecord,
+  listTradeJournal,
+  listTradePlans,
+  getTradePlan,
+  createTradePlan,
+  createTradePlanWithRecord,
+  executeTradePlan,
+  updateTradePlan,
+  deleteTradePlan,
 } from "./db.js";
 import {
   startVolumeAlertScheduler,
@@ -341,7 +349,66 @@ app.post("/api/volume-alerts/backtest", authMiddleware, (req, res) => {
 app.get("/api/trade-records", authMiddleware, (req, res) => {
   const limit = req.query?.limit;
   const offset = req.query?.offset;
+  const journal = String(req.query?.journal || "") === "1";
+  if (journal) {
+    res.json(listTradeJournal(req.user.id, { limit, offset }));
+    return;
+  }
   res.json(listTradeRecords(req.user.id, { limit, offset }));
+});
+
+app.get("/api/trade-plans", authMiddleware, (req, res) => {
+  const limit = req.query?.limit;
+  const offset = req.query?.offset;
+  const executed = req.query?.executed;
+  res.json(listTradePlans(req.user.id, { limit, offset, executed }));
+});
+
+app.get("/api/trade-plans/:id", authMiddleware, (req, res) => {
+  const plan = getTradePlan(req.user.id, req.params.id);
+  if (!plan) {
+    res.status(404).json({ error: "计划不存在" });
+    return;
+  }
+  res.json({ plan });
+});
+
+app.post("/api/trade-plans", authMiddleware, (req, res) => {
+  const result = createTradePlan(req.user.id, req.body);
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, ...result });
+});
+
+app.put("/api/trade-plans/:id", authMiddleware, (req, res) => {
+  const result = updateTradePlan(req.user.id, req.params.id, req.body);
+  if (result.error) {
+    const status = result.error === "计划不存在" ? 404 : 400;
+    res.status(status).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, plan: result.plan });
+});
+
+app.post("/api/trade-plans/:id/execute", authMiddleware, (req, res) => {
+  const result = executeTradePlan(req.user.id, req.params.id, req.body);
+  if (result.error) {
+    const status = result.error === "计划不存在" ? 404 : 400;
+    res.status(status).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, ...result });
+});
+
+app.delete("/api/trade-plans/:id", authMiddleware, (req, res) => {
+  const ok = deleteTradePlan(req.user.id, req.params.id);
+  if (!ok) {
+    res.status(404).json({ error: "计划不存在或已执行，无法删除" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 app.get("/api/trade-records/:id", authMiddleware, (req, res) => {

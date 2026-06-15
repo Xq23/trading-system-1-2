@@ -229,6 +229,51 @@
         color: #ff9090;
         font-weight: 600;
       }
+      .type-plan {
+        color: #9eb0d8;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .type-record {
+        color: #6ee7a8;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .exec-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        padding: 4px 0;
+      }
+      .exec-options label {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #dbe6ff;
+        cursor: pointer;
+      }
+      .exec-options input {
+        width: auto;
+        margin: 0;
+      }
+      .step-hint {
+        font-size: 12px;
+        color: #6f84ad;
+        margin: 0;
+      }
+      .plan-summary {
+        padding: 10px 12px;
+        margin-bottom: 4px;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        background: #131d33;
+        font-size: 12px;
+        color: #9eb0d8;
+      }
+      .plan-summary strong {
+        color: #dbe6ff;
+      }
       .cell-text {
         max-width: 140px;
         white-space: nowrap;
@@ -484,6 +529,9 @@
         overflow: auto;
         min-height: 0;
       }
+      form[hidden] {
+        display: none !important;
+      }
       @media (max-width: 640px) {
         .form-grid {
           grid-template-columns: 1fr;
@@ -504,9 +552,9 @@
     <div class="wrap">
       <div class="head">
         <h1>交易记录</h1>
-        <span class="sub">与登录账号绑定 · 盈亏比根据入场/止盈/止损自动计算</span>
+        <span class="sub">与登录账号绑定 · 先写交易计划，观察行情后在编辑中决定是否执行</span>
         <a href="overview.html">返回概览</a>
-        <button type="button" id="add-btn" class="primary">新增记录</button>
+        <button type="button" id="add-btn" class="primary">新增</button>
         <button type="button" id="reload-btn">刷新</button>
       </div>
 
@@ -524,14 +572,39 @@
       <div class="modal-backdrop" id="modal-backdrop"></div>
       <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="form-title">
         <div class="modal-header">
-          <h2 id="form-title">新增记录</h2>
+          <h2 id="form-title">新增交易计划</h2>
           <button type="button" class="modal-close" id="modal-close" aria-label="关闭">×</button>
         </div>
         <div class="modal-body">
-          <form id="record-form" class="form-grid">
+          <form id="plan-form" class="form-grid">
+            <label>
+              目标币种
+              <input id="p-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
+            </label>
+            <label class="span-2">
+              交易计划
+              <textarea id="p-plan" placeholder="写下你的交易思路、入场逻辑、风控要点等" required></textarea>
+            </label>
+            <div class="span-2 rich-field" id="exec-options-wrap" hidden>
+              <span class="field-group-label">是否执行</span>
+              <div class="exec-options">
+                <label><input type="radio" name="p-executed" value="pending" checked />继续观察</label>
+                <label><input type="radio" name="p-executed" value="not_executed" />不执行</label>
+                <label><input type="radio" name="p-executed" value="executed" />执行（填写交易记录）</label>
+              </div>
+              <p class="step-hint">观察后续行情是否按计划发展，再决定是否执行；选「执行」将进入完整交易记录。</p>
+            </div>
+            <div class="form-actions span-2">
+              <button type="submit" class="primary" id="plan-submit-btn">保存计划</button>
+              <button type="button" id="plan-cancel-btn">取消</button>
+            </div>
+          </form>
+
+          <form id="record-form" class="form-grid" hidden>
+            <div class="span-2 plan-summary" id="plan-summary"></div>
             <label>
               交易币种
-              <input id="f-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
+              <input id="f-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" readonly />
             </label>
             <label>
               方向
@@ -615,7 +688,8 @@
               <div id="f-review-images" class="image-strip"></div>
             </label>
             <div class="form-actions span-2">
-              <button type="submit" class="primary" id="submit-btn">保存</button>
+              <button type="submit" class="primary" id="submit-btn">保存记录</button>
+              <button type="button" id="back-plan-btn">返回计划</button>
               <button type="button" id="cancel-edit-btn">取消</button>
             </div>
           </form>
@@ -628,17 +702,22 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260529"></script>
-    <script src="scripts/ts12-api-client.js?v=20260529"></script>
-    <script src="scripts/ts12-auth.js?v=20260529"></script>
+    <script src="scripts/ts12-api-config.js?v=20260606"></script>
+    <script src="scripts/ts12-api-client.js?v=20260606"></script>
+    <script src="scripts/ts12-auth.js?v=20260606"></script>
     <script>
       Ts12Auth.requireLogin();
 
       const PAGE_SIZE = 30;
-      const formEl = document.getElementById("record-form");
+      const planFormEl = document.getElementById("plan-form");
+      const recordFormEl = document.getElementById("record-form");
       const formTitleEl = document.getElementById("form-title");
+      const planSubmitBtn = document.getElementById("plan-submit-btn");
       const submitBtn = document.getElementById("submit-btn");
       const cancelEditBtn = document.getElementById("cancel-edit-btn");
+      const planCancelBtn = document.getElementById("plan-cancel-btn");
+      const backPlanBtn = document.getElementById("back-plan-btn");
+      const planSummaryEl = document.getElementById("plan-summary");
       const modalEl = document.getElementById("record-modal");
       const modalBackdropEl = document.getElementById("modal-backdrop");
       const modalCloseEl = document.getElementById("modal-close");
@@ -648,6 +727,13 @@
       const pageInfoEl = document.getElementById("page-info");
       const loadMoreBtn = document.getElementById("load-more-btn");
       const reloadBtn = document.getElementById("reload-btn");
+
+      const execOptionsWrapEl = document.getElementById("exec-options-wrap");
+
+      const planFields = {
+        symbol: document.getElementById("p-symbol"),
+        plan: document.getElementById("p-plan"),
+      };
 
       const fields = {
         symbol: document.getElementById("f-symbol"),
@@ -722,33 +808,160 @@
         if (!modalEl.hidden) closeModal();
       });
 
+      function getSelectedExecutionDecision() {
+        const checked = planFormEl.querySelector('input[name="p-executed"]:checked');
+        const v = checked?.value || "pending";
+        if (v === "executed") return "executed";
+        if (v === "not_executed") return "not_executed";
+        return "pending";
+      }
+
+      function setSelectedExecutionDecision(value) {
+        const map = {
+          executed: "executed",
+          not_executed: "not_executed",
+          pending: "pending",
+        };
+        const targetValue = map[value] || "pending";
+        const target = planFormEl.querySelector(`input[name="p-executed"][value="${targetValue}"]`);
+        if (target) target.checked = true;
+      }
+
+      function updatePlanSubmitLabel() {
+        if (!editingPlanId) {
+          planSubmitBtn.textContent = "保存计划";
+          return;
+        }
+        const decision = getSelectedExecutionDecision();
+        planSubmitBtn.textContent = decision === "executed" ? "下一步" : "保存";
+      }
+
+      function showPlanStep() {
+        planFormEl.hidden = false;
+        recordFormEl.hidden = true;
+        backPlanBtn.hidden = true;
+      }
+
+      function showRecordStep() {
+        planFormEl.hidden = true;
+        recordFormEl.hidden = false;
+        backPlanBtn.hidden = Boolean(editingId);
+      }
+
+      function renderPlanSummary() {
+        const sym = planFields.symbol.value.trim();
+        const plan = planFields.plan.value.trim();
+        planSummaryEl.innerHTML = `<strong>目标币种</strong> ${escapeHtml(formatSymbol(sym) || sym || "--")}<br /><strong>交易计划</strong> ${escapeHtml(plan || "--")}`;
+      }
+
+      function resetPlanForm() {
+        editingPlanId = null;
+        planFormEl.reset();
+        setSelectedExecutionDecision("pending");
+        planSubmitBtn.textContent = "保存计划";
+        execOptionsWrapEl.hidden = true;
+      }
+
+      function fillPlanForm(plan) {
+        editingPlanId = plan.id;
+        planFields.symbol.value = plan.exchangeSymbol || "";
+        planFields.plan.value = plan.planText || "";
+        setSelectedExecutionDecision(plan.planStatus === "not_executed" ? "not_executed" : "pending");
+        execOptionsWrapEl.hidden = false;
+        formTitleEl.textContent = "编辑交易计划";
+        updatePlanSubmitLabel();
+      }
+
+      function getPlanPayload() {
+        return {
+          exchangeSymbol: planFields.symbol.value.trim(),
+          planText: planFields.plan.value.trim(),
+        };
+      }
+
+      function getPlanUpdatePayload() {
+        return {
+          ...getPlanPayload(),
+          executionDecision: getSelectedExecutionDecision(),
+        };
+      }
+
       function openModal() {
         modalEl.hidden = false;
         document.body.style.overflow = "hidden";
-        fields.symbol.focus();
+        if (!recordFormEl.hidden) {
+          fields.entry.focus();
+        } else {
+          planFields.symbol.focus();
+        }
       }
 
       function closeModal() {
         modalEl.hidden = true;
         document.body.style.overflow = "";
         resetForm();
+        resetPlanForm();
+        showPlanStep();
+        pendingPlan = null;
       }
 
       function openAddModal() {
         resetForm();
-        formTitleEl.textContent = "新增记录";
-        submitBtn.textContent = "保存";
+        resetPlanForm();
+        formTitleEl.textContent = "新增交易计划";
+        planSubmitBtn.textContent = "保存计划";
+        showPlanStep();
         openModal();
       }
 
-      function openEditModal(record) {
-        fillForm(record);
+      function openEditPlanModal(plan) {
+        resetForm();
+        fillPlanForm(plan);
+        showPlanStep();
         openModal();
+      }
+
+      function openEditRecordModal(record) {
+        resetPlanForm();
+        fillForm(record);
+        formTitleEl.textContent = "编辑交易记录";
+        if (record.planText) {
+          planSummaryEl.innerHTML = `<strong>交易计划</strong> ${escapeHtml(record.planText)}`;
+        } else {
+          planSummaryEl.textContent = "无关联交易计划";
+        }
+        showRecordStep();
+        openModal();
+      }
+
+      function proceedToRecordStep(fromPlanId) {
+        fields.symbol.value = planFields.symbol.value.trim().toUpperCase();
+        renderPlanSummary();
+        formTitleEl.textContent = "填写交易记录";
+        submitBtn.textContent = "保存记录";
+        pendingPlan = {
+          planId: fromPlanId || editingPlanId || null,
+          ...getPlanPayload(),
+        };
+        showRecordStep();
+        backPlanBtn.hidden = false;
+        fields.entry.focus();
       }
 
       modalCloseEl.addEventListener("click", closeModal);
       modalBackdropEl.addEventListener("click", closeModal);
       addBtn.addEventListener("click", openAddModal);
+
+      planFormEl.querySelectorAll('input[name="p-executed"]').forEach((input) => {
+        input.addEventListener("change", updatePlanSubmitLabel);
+      });
+
+      backPlanBtn.addEventListener("click", () => {
+        if (editingId) return;
+        showPlanStep();
+        formTitleEl.textContent = editingPlanId ? "编辑交易计划" : "新增交易计划";
+        updatePlanSubmitLabel();
+      });
 
       function approxBase64Bytes(dataUrl) {
         const b64 = String(dataUrl || "").split(",")[1] || "";
@@ -859,11 +1072,13 @@
       setupImageField("condition");
       setupImageField("review");
 
-      let records = [];
+      let items = [];
       let total = 0;
       let offset = 0;
       let loading = false;
       let editingId = null;
+      let editingPlanId = null;
+      let pendingPlan = null;
 
       function computeRiskReward(entry, tp, sl) {
         const e = Number(entry);
@@ -983,7 +1198,7 @@
 
       function resetForm() {
         editingId = null;
-        formEl.reset();
+        recordFormEl.reset();
         fields.rr.value = "";
         fields.side.value = "";
         fields.resultType.value = "";
@@ -994,6 +1209,7 @@
         imageFields.review.images = [];
         renderImageStrip("condition");
         renderImageStrip("review");
+        fields.symbol.readOnly = true;
       }
 
       function fillForm(record) {
@@ -1028,7 +1244,7 @@
         submitBtn.textContent = "更新";
       }
 
-      function getFormPayload() {
+      function getRecordPayload() {
         return {
           exchangeSymbol: fields.symbol.value.trim(),
           positionSide: fields.side.value,
@@ -1046,6 +1262,13 @@
           reviewMatchesRecord: fields.reviewMatches.value,
           review: fields.review.value.trim(),
           reviewImages: [...imageFields.review.images],
+        };
+      }
+
+      function getExecutedRecordPayload() {
+        return {
+          ...getPlanPayload(),
+          ...getRecordPayload(),
         };
       }
 
@@ -1113,33 +1336,66 @@
         return `<div class="cell-rich">${textHtml}${thumbs}</div>`;
       }
 
+      function formatPlanCell(text) {
+        const summary = String(text || "").trim();
+        return formatRichCell(summary, []);
+      }
+
+      function formatPlanStatus(item) {
+        if (item.kind === "record") {
+          return { html: '<span class="type-record">记录</span>', text: "记录" };
+        }
+        if (item.planStatus === "not_executed") {
+          return { html: '<span class="type-plan">计划·未执行</span>', text: "计划·未执行" };
+        }
+        return { html: '<span class="type-plan">计划·待观察</span>', text: "计划·待观察" };
+      }
+
       function renderTable() {
-        if (!records.length) {
+        if (!items.length) {
           tableWrapEl.innerHTML =
-            '<div class="empty">暂无交易记录，点击右上角「新增记录」添加第一条。</div>';
+            '<div class="empty">暂无记录，点击右上角「新增」添加第一条交易计划。</div>';
           return;
         }
         tableWrapEl.innerHTML = `<table>
           <thead><tr>
-            <th>时间</th><th>币种</th><th>入场价</th><th>止盈</th><th>止损</th><th>盈亏比</th>
-            <th>入场条件</th><th>结果</th><th>复盘</th><th></th>
+            <th>时间</th><th>类型</th><th>币种</th><th>入场价</th><th>止盈</th><th>止损</th><th>盈亏比</th>
+            <th>交易计划</th><th>入场条件</th><th>结果</th><th>复盘</th><th></th>
           </tr></thead>
-          <tbody>${records
-            .map((r) => {
-              const result = formatTradeResult(r);
-              return `<tr>
-              <td>${formatTime(r.updatedAt || r.createdAt)}</td>
-              <td>${formatSymbolCell(r)}</td>
-              <td>${formatPrice(r.entryPrice)}</td>
-              <td>${formatPrice(r.takeProfitPrice)}</td>
-              <td>${formatPrice(r.stopLossPrice)}</td>
-              <td class="ratio">${formatRatio(r.riskRewardRatio)}</td>
-              <td>${formatEntryConditionCell(r)}</td>
-              <td title="${escapeHtml(result.text)}">${result.html}</td>
-              <td>${formatReviewCell(r)}</td>
+          <tbody>${items
+            .map((item) => {
+              const type = formatPlanStatus(item);
+              if (item.kind === "plan") {
+                return `<tr>
+              <td>${formatTime(item.updatedAt || item.createdAt)}</td>
+              <td>${type.html}</td>
+              <td><span class="sym">${formatSymbol(item.exchangeSymbol)}</span></td>
+              <td>--</td><td>--</td><td>--</td><td>--</td>
+              <td>${formatPlanCell(item.planText)}</td>
+              <td>--</td><td>--</td><td>--</td>
               <td><div class="row-actions">
-                <button type="button" data-edit="${r.id}">编辑</button>
-                <button type="button" class="danger" data-del="${r.id}">删除</button>
+                <button type="button" data-edit-plan="${item.id}">编辑</button>
+                <button type="button" class="danger" data-del-plan="${item.id}">删除</button>
+              </div></td>
+            </tr>`;
+              }
+              const result = formatTradeResult(item);
+              const planCell = item.planText ? formatPlanCell(item.planText) : '<div class="cell-rich-text">--</div>';
+              return `<tr>
+              <td>${formatTime(item.updatedAt || item.createdAt)}</td>
+              <td>${type.html}</td>
+              <td>${formatSymbolCell(item)}</td>
+              <td>${formatPrice(item.entryPrice)}</td>
+              <td>${formatPrice(item.takeProfitPrice)}</td>
+              <td>${formatPrice(item.stopLossPrice)}</td>
+              <td class="ratio">${formatRatio(item.riskRewardRatio)}</td>
+              <td>${planCell}</td>
+              <td>${formatEntryConditionCell(item)}</td>
+              <td title="${escapeHtml(result.text)}">${result.html}</td>
+              <td>${formatReviewCell(item)}</td>
+              <td><div class="row-actions">
+                <button type="button" data-edit="${item.id}">编辑</button>
+                <button type="button" class="danger" data-del="${item.id}">删除</button>
               </div></td>
             </tr>`;
             })
@@ -1155,8 +1411,8 @@
       }
 
       function updateFooter() {
-        pageInfoEl.textContent = total ? `已加载 ${records.length} / ${total} 条` : "";
-        loadMoreBtn.disabled = loading || records.length >= total;
+        pageInfoEl.textContent = total ? `已加载 ${items.length} / ${total} 条` : "";
+        loadMoreBtn.disabled = loading || items.length >= total;
       }
 
       async function fetchPage(reset = false) {
@@ -1169,17 +1425,21 @@
         try {
           if (reset) {
             offset = 0;
-            records = [];
+            items = [];
           }
           if (typeof Ts12Api?.getTradeRecords !== "function") {
             throw new Error("页面脚本版本过旧，请强制刷新（Mac: Cmd+Shift+R）");
           }
-          const res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset });
-          const batch = Array.isArray(res?.records) ? res.records : [];
-          records = reset ? batch : records.concat(batch);
-          total = Number(res?.total) || records.length;
-          offset = records.length;
-          statusEl.textContent = records.length ? `共 ${total} 条记录` : "暂无记录";
+          const res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset, journal: true });
+          const batch = Array.isArray(res?.items)
+            ? res.items
+            : Array.isArray(res?.records)
+              ? res.records.map((r) => ({ ...r, kind: "record" }))
+              : [];
+          items = reset ? batch : items.concat(batch);
+          total = Number(res?.total) || items.length;
+          offset = items.length;
+          statusEl.textContent = items.length ? `共 ${total} 条` : "暂无记录";
           renderTable();
         } catch (err) {
           statusEl.textContent = String(err?.message || err);
@@ -1197,15 +1457,44 @@
         fields.sl.addEventListener(evt, updateRiskRewardField);
       });
 
-      formEl.addEventListener("submit", async (e) => {
+      planFormEl.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        planSubmitBtn.disabled = true;
+        try {
+          if (editingPlanId) {
+            const decision = getSelectedExecutionDecision();
+            if (decision === "executed") {
+              proceedToRecordStep(editingPlanId);
+              return;
+            }
+            await Ts12Api.updateTradePlan(editingPlanId, getPlanUpdatePayload());
+            closeModal();
+            await fetchPage(true);
+            return;
+          }
+          await Ts12Api.createTradePlan(getPlanPayload());
+          closeModal();
+          await fetchPage(true);
+        } catch (err) {
+          alert(String(err?.message || err));
+        } finally {
+          planSubmitBtn.disabled = false;
+        }
+      });
+
+      recordFormEl.addEventListener("submit", async (e) => {
         e.preventDefault();
         submitBtn.disabled = true;
         try {
-          const payload = getFormPayload();
           if (editingId) {
-            await Ts12Api.updateTradeRecord(editingId, payload);
+            await Ts12Api.updateTradeRecord(editingId, getRecordPayload());
+          } else if (pendingPlan?.planId) {
+            await Ts12Api.executeTradePlan(pendingPlan.planId, {
+              ...getPlanPayload(),
+              ...getRecordPayload(),
+            });
           } else {
-            await Ts12Api.createTradeRecord(payload);
+            await Ts12Api.createTradeRecord(getRecordPayload());
           }
           closeModal();
           await fetchPage(true);
@@ -1217,6 +1506,7 @@
       });
 
       cancelEditBtn.addEventListener("click", closeModal);
+      planCancelBtn.addEventListener("click", closeModal);
       reloadBtn.addEventListener("click", () => fetchPage(true));
       loadMoreBtn.addEventListener("click", () => fetchPage(false));
 
@@ -1226,11 +1516,29 @@
           openLightbox(preview);
           return;
         }
+        const editPlanId = e.target?.getAttribute?.("data-edit-plan");
+        const delPlanId = e.target?.getAttribute?.("data-del-plan");
         const editId = e.target?.getAttribute?.("data-edit");
         const delId = e.target?.getAttribute?.("data-del");
+        if (editPlanId) {
+          const plan = items.find((r) => r.kind === "plan" && r.id === editPlanId);
+          if (plan) openEditPlanModal(plan);
+          return;
+        }
+        if (delPlanId) {
+          if (!window.confirm("确定删除这条交易计划？")) return;
+          try {
+            await Ts12Api.deleteTradePlan(delPlanId);
+            if (editingPlanId === delPlanId && !modalEl.hidden) closeModal();
+            await fetchPage(true);
+          } catch (err) {
+            alert(String(err?.message || err));
+          }
+          return;
+        }
         if (editId) {
-          const record = records.find((r) => r.id === editId);
-          if (record) openEditModal(record);
+          const record = items.find((r) => r.kind === "record" && r.id === editId);
+          if (record) openEditRecordModal(record);
           return;
         }
         if (delId) {

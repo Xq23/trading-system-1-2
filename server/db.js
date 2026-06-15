@@ -103,10 +103,6 @@ try {
   db.exec(`ALTER TABLE trade_records ADD COLUMN position_side TEXT NOT NULL DEFAULT ''`);
 } catch (_) {}
 
-try {
-  db.exec(`ALTER TABLE trade_plans ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'pending'`);
-} catch (_) {}
-
 db.exec(`
   CREATE TABLE IF NOT EXISTS trade_plans (
     id TEXT PRIMARY KEY,
@@ -114,6 +110,7 @@ db.exec(`
     exchange_symbol TEXT NOT NULL,
     plan_text TEXT NOT NULL DEFAULT '',
     executed INTEGER NOT NULL DEFAULT 0,
+    plan_status TEXT NOT NULL DEFAULT 'pending',
     trade_record_id TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -121,6 +118,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_trade_plans_user ON trade_plans(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_trade_plans_record ON trade_plans(trade_record_id);
 `);
+
+try {
+  db.exec(`ALTER TABLE trade_plans ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'pending'`);
+} catch (_) {}
 
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_volume_alerts_trigger ON volume_alerts(trigger_candle_open_time DESC);

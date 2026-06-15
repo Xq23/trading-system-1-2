@@ -702,9 +702,9 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260606"></script>
-    <script src="scripts/ts12-api-client.js?v=20260606"></script>
-    <script src="scripts/ts12-auth.js?v=20260606"></script>
+    <script src="scripts/ts12-api-config.js?v=20260615"></script>
+    <script src="scripts/ts12-api-client.js?v=20260615"></script>
+    <script src="scripts/ts12-auth.js?v=20260615"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -1430,7 +1430,13 @@
           if (typeof Ts12Api?.getTradeRecords !== "function") {
             throw new Error("页面脚本版本过旧，请强制刷新（Mac: Cmd+Shift+R）");
           }
-          const res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset, journal: true });
+          let res;
+          try {
+            res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset, journal: true });
+          } catch (journalErr) {
+            if (journalErr?.status !== 500 && journalErr?.status !== 404) throw journalErr;
+            res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset, journal: false });
+          }
           const batch = Array.isArray(res?.items)
             ? res.items
             : Array.isArray(res?.records)

@@ -837,7 +837,7 @@
     <script src="scripts/ts12-api-config.js?v=20260521"></script>
     <script src="scripts/ts12-api-client.js?v=20260521"></script>
     <script src="scripts/ts12-auth.js?v=20260521"></script>
-    <script src="scripts/ts12-symbol-prefs.js?v=20260521"></script>
+    <script src="scripts/ts12-symbol-prefs.js?v=20260615b"></script>
     <script src="scripts/ts12-binance-futures.js?v=20260521"></script>
     <script src="scripts/ts12-volume-alerts.js?v=20260524"></script>
     <script>
@@ -1012,7 +1012,7 @@
       }
 
       /** 分组只存引用；币种须同时在全局列表（customSymbols）才会出现在下拉框 */
-      function ensureSymbolInGlobalList(exchangeSymbol) {
+      function ensureSymbolInGlobalList(exchangeSymbol, { unhideDefault = true } = {}) {
         const ex = makeSymbolKey(exchangeSymbol);
         if (!ex) return false;
         let changed = false;
@@ -1020,6 +1020,7 @@
         if (defaultEntry) {
           const hidden = symbolPrefs.hiddenDefaults || [];
           if (hidden.includes(defaultEntry[0])) {
+            if (!unhideDefault) return false;
             symbolPrefs.hiddenDefaults = hidden.filter((key) => key !== defaultEntry[0]);
             changed = true;
           }
@@ -1034,7 +1035,7 @@
         let changed = false;
         for (const g of getSymbolGroups()) {
           for (const ex of g.symbols || []) {
-            if (ensureSymbolInGlobalList(ex)) changed = true;
+            if (ensureSymbolInGlobalList(ex, { unhideDefault: false })) changed = true;
           }
         }
         if (changed) await persistSymbolPrefs();
@@ -1285,11 +1286,7 @@
         setTimeout(() => document.addEventListener("click", close, true), 0);
       }
       async function persistSymbolPrefs() {
-        try {
-          await Ts12SymbolPrefs.saveAsyncNow(symbolPrefs, currentUserId);
-        } catch (err) {
-          console.error("云端同步分组失败", err);
-        }
+        await Ts12SymbolPrefs.saveAsyncNow(symbolPrefs, currentUserId);
       }
       const makeSymbolKey = Ts12SymbolPrefs.makeSymbolKey;
       const formatExchangePair = Ts12SymbolPrefs.formatExchangePair;
@@ -1457,10 +1454,9 @@
 
       function removeSymbolFromAllGroups(exchangeSymbol) {
         Ts12SymbolPrefs.removeSymbolFromAllGroups(symbolPrefs, exchangeSymbol);
-        persistSymbolPrefs();
       }
 
-      function removeSymbol(key) {
+      async function removeSymbol(key) {
         if (!symbolConfig[key] || Object.keys(symbolConfig).length <= 1) return;
         const exchangeSymbol = symbolConfig[key].exchangeSymbol;
         removeSymbolFromAllGroups(exchangeSymbol);
@@ -1469,7 +1465,12 @@
         } else {
           symbolPrefs.customSymbols = (symbolPrefs.customSymbols || []).filter((symbol) => symbol !== exchangeSymbol);
         }
-        persistSymbolPrefs();
+        try {
+          await persistSymbolPrefs();
+        } catch (err) {
+          setSymbolEditorMessage(String(err?.message || err) || "删除失败，请重试", true);
+          return;
+        }
         const wasActive = symbolSelectEl.value === key;
         renderSymbolGroupBar();
         renderSymbolOptions(wasActive ? null : symbolSelectEl.value);

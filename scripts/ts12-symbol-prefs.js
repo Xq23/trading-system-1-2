@@ -5,6 +5,7 @@
   const LEGACY_STORAGE_KEY = "ts12-editable-symbols-v1";
   const LEGACY_MIGRATED_FLAG = "ts12-legacy-migrated-v1";
   let saveTimer = null;
+  let saveChain = Promise.resolve();
 
   function storageKey(userId) {
     return `${LEGACY_STORAGE_KEY}:${userId}`;
@@ -157,27 +158,49 @@
     return synced;
   }
 
-  async function pushPrefsToCloud(userId) {
+  async function pushPrefsToCloud(userId, prefs) {
     if (!global.Ts12Api?.isEnabled?.()) return 0;
-    const latest = loadLocal(userId);
+    const latest = normalizePrefs(prefs || loadLocal(userId));
     const res = await global.Ts12Api.putPrefs(latest);
     const serverTs = Number(res?.updatedAt) || Date.now();
     cacheLocal(latest, userId, serverTs);
     return serverTs;
   }
 
+  function enqueueSave(task) {
+    saveChain = saveChain.then(task, task);
+    return saveChain;
+  }
+
   async function loadAsync(userId) {
     if (!userId) return emptyPrefs();
     if (!global.Ts12Api?.isEnabled?.()) return loadLocal(userId);
     try {
-      const pulled = await pullPrefsFromCloud(userId);
-      if (pulled) return pulled;
       const local = loadLocal(userId);
-      if (prefsHasContent(local)) {
-        await pushPrefsToCloud(userId);
+      const remoteRes = await global.Ts12Api.getPrefs();
+      const remote = normalizePrefs(remoteRes?.prefs || {});
+      const serverTs = Number(remoteRes?.updatedAt) || 0;
+      const localTs = Number(local.clientUpdatedAt) || 0;
+
+      if (localTs > serverTs && prefsHasContent(local)) {
+        await pushPrefsToCloud(userId, local);
         return loadLocal(userId);
       }
-      return emptyPrefs();
+
+      if (serverTs <= 0 && !prefsHasContent(remote)) {
+        if (prefsHasContent(local)) {
+          await pushPrefsToCloud(userId, local);
+          return loadLocal(userId);
+        }
+        return emptyPrefs();
+      }
+
+      const synced = {
+        ...remote,
+        clientUpdatedAt: serverTs || remote.clientUpdatedAt || Date.now(),
+      };
+      cacheLocal(synced, userId, synced.clientUpdatedAt);
+      return synced;
     } catch (err) {
       console.warn("云端偏好加载失败，使用本地缓存", err);
       return loadLocal(userId);
@@ -193,23 +216,27 @@
     if (!global.Ts12Api?.isEnabled?.()) return Promise.resolve();
     clearTimeout(saveTimer);
     return new Promise((resolve, reject) => {
-      saveTimer = setTimeout(async () => {
-        try {
-          await pushPrefsToCloud(userId);
-          resolve();
-        } catch (err) {
-          console.warn("云端偏好保存失败", err);
-          reject(err);
-        }
+      saveTimer = setTimeout(() => {
+        enqueueSave(async () => {
+          try {
+            await pushPrefsToCloud(userId, loadLocal(userId));
+            resolve();
+          } catch (err) {
+            console.warn("云端偏好保存失败", err);
+            reject(err);
+          }
+        });
       }, 400);
     });
   }
 
   async function saveAsyncNow(prefs, userId) {
-    cacheLocal(prefs, userId, Date.now());
-    if (!global.Ts12Api?.isEnabled?.()) return;
-    clearTimeout(saveTimer);
-    await pushPrefsToCloud(userId);
+    return enqueueSave(async () => {
+      cacheLocal(prefs, userId, Date.now());
+      if (!global.Ts12Api?.isEnabled?.()) return;
+      clearTimeout(saveTimer);
+      await pushPrefsToCloud(userId, prefs);
+    });
   }
 
   function buildSymbolConfig(defaultSymbolConfig, prefs) {

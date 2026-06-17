@@ -271,7 +271,7 @@
     <script src="scripts/ts12-api-config.js?v=20260521"></script>
     <script src="scripts/ts12-api-client.js?v=20260521"></script>
     <script src="scripts/ts12-auth.js?v=20260521"></script>
-    <script src="scripts/ts12-symbol-prefs.js?v=20260521"></script>
+    <script src="scripts/ts12-symbol-prefs.js?v=20260615b"></script>
     <script src="scripts/ts12-binance-futures.js?v=20260521"></script>
     <script>
       const authSession = Ts12Auth.requireLogin();
@@ -316,9 +316,8 @@
         symbolGroups: [],
         activeSymbolGroupId: null,
       };
-      function persistSymbolPrefs() {
-        Ts12SymbolPrefs.save(symbolPrefs, currentUserId);
-        Ts12SymbolPrefs.saveAsync(symbolPrefs, currentUserId);
+      async function persistSymbolPrefs() {
+        await Ts12SymbolPrefs.saveAsyncNow(symbolPrefs, currentUserId);
       }
       if (userDisplayEl) {
         userDisplayEl.textContent = authSession.displayName || authSession.username;
@@ -537,7 +536,7 @@
         }
       }
 
-      function removeSymbol(key) {
+      async function removeSymbol(key) {
         if (!symbolConfig[key] || Object.keys(symbolConfig).length <= 1) return;
         const exchangeSymbol = symbolConfig[key].exchangeSymbol;
         if (Object.prototype.hasOwnProperty.call(DEFAULT_SYMBOL_CONFIG, key)) {
@@ -545,7 +544,12 @@
         } else {
           symbolPrefs.customSymbols = (symbolPrefs.customSymbols || []).filter((symbol) => symbol !== exchangeSymbol);
         }
-        persistSymbolPrefs();
+        try {
+          await persistSymbolPrefs();
+        } catch (err) {
+          setSymbolEditorMessage(String(err?.message || err) || "删除失败，请重试", true);
+          return;
+        }
         const wasActive = symbolEl.value === key;
         renderSymbolOptions(wasActive ? null : symbolEl.value);
         refreshTitle();

@@ -284,6 +284,7 @@ async function main() {
   const opts = parseArgs(process.argv);
   let Wmax = 0;
   if (opts.interval === "30m") Wmax = Math.max(Wmax, barsForCalendarDays(opts.interval, 7));
+  if (opts.interval === "4h") Wmax = Math.max(Wmax, barsForCalendarDays(opts.interval, 30));
   if (opts.interval === "1d") {
     Wmax = Math.max(Wmax, barsForCalendarDays(opts.interval, 90));
     Wmax = Math.max(Wmax, barsForCalendarDays(opts.interval, 365));
@@ -297,11 +298,16 @@ async function main() {
   const volSig = calcVolumeSignals(raw, 34, 3.0);
 
   let roll7 = null;
+  let roll30 = null;
   let roll90 = null;
   let roll365 = null;
   if (opts.interval === "30m") {
     const W7 = barsForCalendarDays(opts.interval, 7);
     roll7 = calcRollingSmaClose(mergedHistory, W7).slice(-raw.length);
+  }
+  if (opts.interval === "4h") {
+    const W30 = barsForCalendarDays(opts.interval, 30);
+    roll30 = calcRollingSmaClose(mergedHistory, W30).slice(-raw.length);
   }
   if (opts.interval === "1d") {
     const W90 = barsForCalendarDays(opts.interval, 90);
@@ -335,6 +341,7 @@ async function main() {
     },
     rolling: {
       d7: roll7 && roll7[li] != null ? fmt(roll7[li]) : null,
+      d30: roll30 && roll30[li] != null ? fmt(roll30[li]) : null,
       d90: roll90 && roll90[li] != null ? fmt(roll90[li]) : null,
       d365: roll365 && roll365[li] != null ? fmt(roll365[li]) : null,
     },
@@ -354,7 +361,7 @@ async function main() {
   );
   console.log(`放量(>34均量×3): ${payload.volume.isSpike ? "是" : "否"}  NPOC ${payload.volume.npoc ?? "—"}`);
   console.log(
-    `Rolling 收盘均线: 7d ${payload.rolling.d7 ?? "—"}  90d ${payload.rolling.d90 ?? "—"}  365d ${payload.rolling.d365 ?? "—"}`
+    `Rolling 收盘均线: 7d ${payload.rolling.d7 ?? "—"}  30d ${payload.rolling.d30 ?? "—"}  90d ${payload.rolling.d90 ?? "—"}  365d ${payload.rolling.d365 ?? "—"}`
   );
   console.log(`（与详情页 index.html 同源算法；不构成投资建议）`);
 }

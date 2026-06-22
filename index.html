@@ -860,6 +860,7 @@
         prevExtendVal,
         categoryTimesFull,
         rolling7d,
+        rolling30d,
         rolling90d,
         rolling365d
       ) {
@@ -876,6 +877,7 @@
         const axisMargin = narrowPhone ? 6 : 10;
 
         const rollingShow7 = interval === "30m";
+        const rollingShow30 = interval === "4h";
         const rollingShow90365 = interval === "1d";
 
         /* VP 包裹：往期深灰、当期浅灰（与上一版配色对调） */
@@ -930,6 +932,14 @@
           "rgba(94,234,212,0.95)",
           [0, 0]
         );
+        const markRolling30 = makeRollingEndMark(
+          categoryLabels,
+          rolling30d,
+          rollingShow30,
+          "30d",
+          "rgba(56,189,248,0.95)",
+          [0, 0]
+        );
 
         return {
           backgroundColor: "#0b1220",
@@ -964,6 +974,7 @@
               const vol = Number(volumeValues[dataIndex]);
               const npoc = npocSeries[dataIndex];
               const r7 = rolling7d[dataIndex];
+              const r30 = rolling30d[dataIndex];
               const r90 = rolling90d[dataIndex];
               const r365 = rolling365d[dataIndex];
               const isSpikeBar = Boolean(spikeFlags[dataIndex]);
@@ -976,11 +987,12 @@
                 isSpikeBar && Number.isFinite(Number(npoc))
                   ? `<div style="display:grid;grid-template-columns:52px auto;column-gap:10px;align-items:center;"><span style="color:#f6c453;">NPOC</span><span style="color:#f6c453;font-weight:600;text-align:right;">${fmt(npoc)}</span></div>`
                   : "";
-              const rollingBorderStyle = rollingShow90365
-                ? "1px solid rgba(232,184,106,0.28)"
-                : "1px solid rgba(94,234,212,0.22)";
+              const rollingBorderStyle =
+                rollingShow90365 || rollingShow30
+                  ? "1px solid rgba(232,184,106,0.28)"
+                  : "1px solid rgba(94,234,212,0.22)";
               const rollingBlock =
-                rollingShow7 || rollingShow90365
+                rollingShow7 || rollingShow30 || rollingShow90365
                   ? `<div style="margin-top:6px;padding-top:6px;border-top:${rollingBorderStyle};">
                   ${
                     rollingShow7
@@ -988,8 +1000,13 @@
                       : ""
                   }
                   ${
+                    rollingShow30
+                      ? `<div style="display:grid;grid-template-columns:90px auto;column-gap:10px;margin-top:${rollingShow7 ? "4px" : "0"};"><span style="color:#38bdf8;">30d Rolling</span><span style="color:#38bdf8;font-weight:600;text-align:right;">${fmt(r30)}</span></div>`
+                      : ""
+                  }
+                  ${
                     rollingShow90365
-                      ? `<div style="display:grid;grid-template-columns:90px auto;column-gap:10px;margin-top:${rollingShow7 ? "4px" : "0"};"><span style="color:#e8b86a;">90d Rolling</span><span style="color:#e8b86a;font-weight:600;text-align:right;">${fmt(r90)}</span></div><div style="display:grid;grid-template-columns:90px auto;column-gap:10px;margin-top:4px;"><span style="color:#a78bfa;">365d Rolling</span><span style="color:#a78bfa;font-weight:600;text-align:right;">${fmt(r365)}</span></div>`
+                      ? `<div style="display:grid;grid-template-columns:90px auto;column-gap:10px;margin-top:${rollingShow7 || rollingShow30 ? "4px" : "0"};"><span style="color:#e8b86a;">90d Rolling</span><span style="color:#e8b86a;font-weight:600;text-align:right;">${fmt(r90)}</span></div><div style="display:grid;grid-template-columns:90px auto;column-gap:10px;margin-top:4px;"><span style="color:#a78bfa;">365d Rolling</span><span style="color:#a78bfa;font-weight:600;text-align:right;">${fmt(r365)}</span></div>`
                       : ""
                   }
                 </div>`
@@ -1217,6 +1234,19 @@
               z: 25,
               ...(markRolling7 ? { markPoint: markRolling7 } : {}),
             },
+            {
+              name: "30d Rolling",
+              type: "line",
+              smooth: 0.16,
+              show: rollingShow30,
+              showSymbol: false,
+              sampling: false,
+              silent: true,
+              lineStyle: { width: 1.3, color: "rgba(56,189,248,0.92)", type: "solid" },
+              data: rolling30d,
+              z: 25,
+              ...(markRolling30 ? { markPoint: markRolling30 } : {}),
+            },
             { name: "NPOC", type: "scatter", symbol: "circle", symbolSize: 8, data: npocPoints, itemStyle: { color: "#f6c453", borderColor: "#ffe49a", borderWidth: 1, shadowBlur: 8, shadowColor: "rgba(246,196,83,0.5)" }, z: 26 },
             { name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: volumeValues, itemStyle: { color: (p) => volumeColors[p.dataIndex] ?? "#17c96499" } },
           ],
@@ -1232,9 +1262,11 @@
           statusTextEl.classList.remove("error");
           statusTextEl.textContent = "正在加载 " + interval + " 数据...";
           const wantRolling7 = interval === "30m";
+          const wantRolling30 = interval === "4h";
           const wantRolling90365 = interval === "1d";
           let Wmax = 0;
           if (wantRolling7) Wmax = Math.max(Wmax, barsForCalendarDays(interval, 7));
+          if (wantRolling30) Wmax = Math.max(Wmax, barsForCalendarDays(interval, 30));
           if (wantRolling90365) {
             Wmax = Math.max(Wmax, barsForCalendarDays(interval, 90));
             Wmax = Math.max(Wmax, barsForCalendarDays(interval, 365));
@@ -1244,11 +1276,16 @@
           const raw = mergedHistory.slice(-KLINE_COUNT);
           const nullBarRow = () => new Array(KLINE_COUNT).fill(null);
           let roll7 = nullBarRow();
+          let roll30 = nullBarRow();
           let roll90 = nullBarRow();
           let roll365 = nullBarRow();
           if (wantRolling7) {
             const W7 = barsForCalendarDays(interval, 7);
             roll7 = calcRollingSmaClose(mergedHistory, W7).slice(-KLINE_COUNT);
+          }
+          if (wantRolling30) {
+            const W30 = barsForCalendarDays(interval, 30);
+            roll30 = calcRollingSmaClose(mergedHistory, W30).slice(-KLINE_COUNT);
           }
           if (wantRolling90365) {
             const W90 = barsForCalendarDays(interval, 90);
@@ -1328,6 +1365,7 @@
           const dataX = data.concat(Array(KLINE_X_GAP).fill(null).map(() => [NaN, NaN, NaN, NaN]));
           const vpBandsX = { ...vpBands, poc: padArr(vpBands.poc, null), vah: padArr(vpBands.vah, null), val: padArr(vpBands.val, null) };
           const rolling7dX = padArr(roll7, null);
+          const rolling30dX = padArr(roll30, null);
           const rolling90dX = padArr(roll90, null);
           const rolling365dX = padArr(roll365, null);
 
@@ -1354,6 +1392,7 @@
               padArr(prevExtendVal, null),
               categoryTimesFullX,
               rolling7dX,
+              rolling30dX,
               rolling90dX,
               rolling365dX
             ),

@@ -135,14 +135,17 @@ if newSeg {
 
 // ========= Rolling 收盘均线（日历日 → 根数，与页面 barsForCalendarDays 一致）=========
 w7 = ceil(7 * 24 * 60 / barMinutes)
+w30 = ceil(30 * 24 * 60 / barMinutes)
 w90 = ceil(90 * 24 * 60 / barMinutes)
 w365 = ceil(365 * 24 * 60 / barMinutes)
 
 roll7 = ma(close, w7)
+roll30 = ma(close, w30)
 roll90 = ma(close, w90)
 roll365 = ma(close, w365)
-// 与 index.html 一致：仅 30m 画 7d；仅 1d（年 VP）画 90d/365d；4h/12h 不画 Rolling
+// 与 index.html 一致：30m 画 7d；4h 画 30d；1d 画 90d/365d
 roll7p = effPreset == 0 ? roll7 : nan
+roll30p = effPreset == 2 ? roll30 : nan
 roll90p = effPreset == 3 ? roll90 : nan
 roll365p = effPreset == 3 ? roll365 : nan
 
@@ -153,6 +156,7 @@ plot(smVal, title = "VP VAL", color = "rgba(139,165,255,0.95)", lineWidth = 1)
 fill(smVah, smVal, color = "rgba(139,165,255,0.12)")
 
 plot(roll7p, title = "Rolling 7d close", color = "rgba(94,234,212,0.9)", lineWidth = 1)
+plot(roll30p, title = "Rolling 30d close", color = "rgba(56,189,248,0.9)", lineWidth = 1)
 plot(roll90p, title = "Rolling 90d close", color = "rgba(232,184,106,0.9)", lineWidth = 1)
 plot(roll365p, title = "Rolling 365d close", color = "rgba(167,139,250,0.9)", lineWidth = 1)
 

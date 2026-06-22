@@ -24,17 +24,21 @@ barsForDays(days) =>
     math.max(1, math.ceil(days * 24.0 * 3600.0 / tfSec))
 
 w7 = barsForDays(7)
+w30 = barsForDays(30)
 w90 = barsForDays(90)
 w365 = barsForDays(365)
 
 roll7 = ta.sma(close, w7)
+roll30 = ta.sma(close, w30)
 roll90 = ta.sma(close, w90)
 roll365 = ta.sma(close, w365)
 
 show7 = timeframe.in_seconds() == 30 * 60
+show30 = timeframe.in_seconds() == 4 * 3600
 show90365 = timeframe.in_seconds() == 86400
 
 plot(show7 ? roll7 : na, "Rolling 7d close", color = color.new(color.teal, 0), linewidth = 2)
+plot(show30 ? roll30 : na, "Rolling 30d close", color = color.new(color.sky, 0), linewidth = 2)
 plot(show90365 ? roll90 : na, "Rolling 90d close", color = color.new(color.orange, 0), linewidth = 2)
 plot(show90365 ? roll365 : na, "Rolling 365d close", color = color.new(color.purple, 0), linewidth = 2)
 

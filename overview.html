@@ -2379,7 +2379,7 @@
         requestAnimationFrame(resizeAllCharts);
       }
 
-      function buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll90d, roll365d) {
+      function buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll30d, roll90d, roll365d) {
         const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
         const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
         const historyBandDelta = vpBands.vah.map((v, i) =>
@@ -2465,6 +2465,21 @@
             { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
             { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
             { type: "candlestick", silent: true, z: 18, data: candles, itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" } },
+            ...(rollingHasRenderablePoints(roll30d)
+              ? [
+                  {
+                    name: "30d Rolling",
+                    type: "line",
+                    smooth: 0.16,
+                    showSymbol: false,
+                    sampling: false,
+                    silent: true,
+                    z: 25,
+                    lineStyle: { width: 1.25, color: "rgba(56,189,248,0.92)", type: "solid" },
+                    data: roll30d,
+                  },
+                ]
+              : []),
             ...(rollingHasRenderablePoints(roll365d)
               ? [
                   {
@@ -2512,17 +2527,25 @@
         if (!cfg) return;
         try {
           let fetchLimit = KLINE_COUNT;
+          const needRollingHistory = def.interval === "1d" || def.interval === "4h";
           if (def.interval === "1d") {
             const w365 = barsForCalendarDays("1d", 365);
             fetchLimit = KLINE_COUNT + w365 - 1;
+          } else if (def.interval === "4h") {
+            const w30 = barsForCalendarDays("4h", 30);
+            fetchLimit = KLINE_COUNT + w30 - 1;
           }
-          const rawFull =
-            def.interval === "1d"
-              ? await requestKlinesHistory(cfg.exchangeSymbol, def.interval, fetchLimit)
-              : await requestKlines(cfg.exchangeSymbol, def.interval, fetchLimit);
+          const rawFull = needRollingHistory
+            ? await requestKlinesHistory(cfg.exchangeSymbol, def.interval, fetchLimit)
+            : await requestKlines(cfg.exchangeSymbol, def.interval, fetchLimit);
           const raw = rawFull.slice(-KLINE_COUNT);
+          let roll30d = null;
           let roll90d = null;
           let roll365d = null;
+          if (def.interval === "4h") {
+            const W30 = barsForCalendarDays("4h", 30);
+            roll30d = calcRollingSmaClose(rawFull, W30).slice(-KLINE_COUNT);
+          }
           if (def.interval === "1d") {
             const W90 = barsForCalendarDays("1d", 90);
             const W365 = barsForCalendarDays("1d", 365);
@@ -2535,7 +2558,7 @@
           const { prevExtendVah, prevExtendPoc, prevExtendVal } = computePrevPeriodExtendVp(raw, def.interval, vpBands);
           const chart = chartInstances.get(def.id);
           if (!chart) return;
-          chart.setOption(buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll90d, roll365d), true);
+          chart.setOption(buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll30d, roll90d, roll365d), true);
           metaEl.textContent = "";
           metaEl.classList.remove("error");
           if (def.interval === "30m") updatePairInfo(Number(raw[raw.length - 1][4]));

@@ -145,7 +145,7 @@ roll90 = ma(close, w90)
 roll365 = ma(close, w365)
 // 与 index.html 一致：30m 画 7d；4h 画 30d；1d 画 90d/365d
 roll7p = effPreset == 0 ? roll7 : nan
-roll30p = effPreset == 2 ? roll30 : nan
+roll30p = effPreset == 1 ? roll30 : nan
 roll90p = effPreset == 3 ? roll90 : nan
 roll365p = effPreset == 3 ? roll365 : nan
 

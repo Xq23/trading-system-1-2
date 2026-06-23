@@ -840,6 +840,7 @@
     <script src="scripts/ts12-symbol-prefs.js?v=20260615b"></script>
     <script src="scripts/ts12-binance-futures.js?v=20260521"></script>
     <script src="scripts/ts12-volume-alerts.js?v=20260524"></script>
+    <script src="scripts/ts12-candle-volume.js?v=20260622"></script>
     <script>
       const authSession = Ts12Auth.requireLogin();
       const currentUserId = authSession.userId;
@@ -2379,7 +2380,7 @@
         requestAnimationFrame(resizeAllCharts);
       }
 
-      function buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll30d, roll90d, roll365d) {
+      function buildOption(timestamps, candles, volumes, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll30d, roll90d, roll365d) {
         const currentPeriodStart = Math.max(0, vpBands.currentPeriodStartIdx || 0);
         const historyVal = vpBands.val.map((v, i) => (i < currentPeriodStart ? v : null));
         const historyBandDelta = vpBands.vah.map((v, i) =>
@@ -2464,7 +2465,12 @@
             { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
             { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
             { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
-            { type: "candlestick", silent: true, z: 18, data: candles, itemStyle: { color: "#17c964", color0: "#f31260", borderColor: "#17c964", borderColor0: "#f31260" } },
+            Ts12CandleVolume.createSeries({
+              candles: candles.map(([open, close, low, high]) => ({ open, close, low, high })),
+              volumes,
+              silent: true,
+              z: 18,
+            }),
             ...(rollingHasRenderablePoints(roll30d)
               ? [
                   {
@@ -2553,12 +2559,13 @@
             roll365d = calcRollingSmaClose(rawFull, W365).slice(-KLINE_COUNT);
           }
           const timestamps = raw.map((item) => formatTime(Number(item[0])));
+          const volumes = raw.map((item) => Number(item[5]));
           const candles = raw.map((item) => [Number(item[1]), Number(item[4]), Number(item[3]), Number(item[2])]);
           const vpBands = calcVpBands(raw, def.interval);
           const { prevExtendVah, prevExtendPoc, prevExtendVal } = computePrevPeriodExtendVp(raw, def.interval, vpBands);
           const chart = chartInstances.get(def.id);
           if (!chart) return;
-          chart.setOption(buildOption(timestamps, candles, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll30d, roll90d, roll365d), true);
+          chart.setOption(buildOption(timestamps, candles, volumes, vpBands, prevExtendVah, prevExtendPoc, prevExtendVal, roll30d, roll90d, roll365d), true);
           metaEl.textContent = "";
           metaEl.classList.remove("error");
           if (def.interval === "30m") updatePairInfo(Number(raw[raw.length - 1][4]));

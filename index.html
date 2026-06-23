@@ -282,7 +282,7 @@
     <script src="scripts/ts12-auth.js?v=20260521"></script>
     <script src="scripts/ts12-symbol-prefs.js?v=20260615b"></script>
     <script src="scripts/ts12-binance-futures.js?v=20260521"></script>
-    <script src="scripts/ts12-candle-volume.js?v=20260623a"></script>
+    <script src="scripts/ts12-candle-volume.js?v=20260623b"></script>
     <script>
       const authSession = Ts12Auth.requireLogin();
       const currentUserId = authSession.userId;
@@ -1179,13 +1179,16 @@
             { name: "VAH", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.vah },
             { name: "VAL", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.2, color: "rgba(139,165,255,0.68)", type: "solid" }, data: vpBands.val },
             { name: "POC", type: "line", smooth: 0.2, showSymbol: false, sampling: "lttb", silent: true, z: 3, lineStyle: { width: 1.1, color: "rgba(76,114,255,0.62)", type: "dashed" }, data: vpBands.poc },
-            Ts12CandleVolume.createSeries({
-              name: "K线",
-              candles,
-              volumes: volumeValues,
-              z: 18,
-              progressive: 1000,
-              markPoint: {
+            ...(() => {
+              const paired = Ts12CandleVolume.createPairedSeries({
+                name: "K线",
+                candles,
+                volumes: volumeValues,
+                colors: volumeColors,
+                z: 18,
+                progressive: 1000,
+              });
+              paired.candle.markPoint = {
                 symbol: "circle",
                 symbolSize: 1,
                 itemStyle: { color: "transparent", borderWidth: 0 },
@@ -1201,8 +1204,9 @@
                   formatter: () => `最新 ${formatPrice(lastClose)}`,
                 },
                 data: [{ coord: [lastCategoryForMark, lastClose], value: lastClose }],
-              },
-            }),
+              };
+              return [paired.candle, paired.volumeBar];
+            })(),
             {
               name: "365d Rolling",
               type: "line",
@@ -1256,7 +1260,6 @@
               ...(markRolling30 ? { markPoint: markRolling30 } : {}),
             },
             { name: "NPOC", type: "scatter", symbol: "circle", symbolSize: 8, data: npocPoints, itemStyle: { color: "#f6c453", borderColor: "#ffe49a", borderWidth: 1, shadowBlur: 8, shadowColor: "rgba(246,196,83,0.5)" }, z: 26 },
-            { name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: volumeValues, itemStyle: { color: (p) => volumeColors[p.dataIndex] ?? "#17c96499" } },
           ],
         };
       }

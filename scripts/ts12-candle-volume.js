@@ -2,30 +2,31 @@
  * K 线实体宽度随成交量变化（ECharts custom series）
  */
 (function (global) {
+  function percentile(sortedAsc, p) {
+    if (!sortedAsc.length) return 0;
+    const idx = Math.min(sortedAsc.length - 1, Math.max(0, Math.floor((sortedAsc.length - 1) * p)));
+    return sortedAsc[idx];
+  }
+
   function computeVolumeWidthRatios(volumes, opts = {}) {
-    const lookback = Math.max(2, Number(opts.lookback) || 34);
-    const minRatio = Number(opts.minRatio) || 0.26;
+    const minRatio = Number(opts.minRatio) || 0.08;
     const maxRatio = Number(opts.maxRatio) || 1;
+    const gamma = Number(opts.gamma) || 0.45;
     const list = Array.isArray(volumes) ? volumes : [];
-    const ratios = new Array(list.length);
-    for (let i = 0; i < list.length; i += 1) {
-      const v = Number(list[i]);
-      if (!Number.isFinite(v) || v <= 0) {
-        ratios[i] = minRatio;
-        continue;
-      }
-      const start = Math.max(0, i - lookback + 1);
-      let maxV = 0;
-      for (let j = start; j <= i; j += 1) {
-        const vv = Number(list[j]);
-        if (Number.isFinite(vv) && vv > maxV) maxV = vv;
-      }
-      const ref = maxV > 0 ? maxV : v;
+    const positive = list.map(Number).filter((v) => Number.isFinite(v) && v > 0);
+    if (!positive.length) return list.map(() => minRatio);
+
+    const sorted = [...positive].sort((a, b) => a - b);
+    const refMax = percentile(sorted, 0.92) || sorted[sorted.length - 1];
+    const ref = refMax > 0 ? refMax : sorted[sorted.length - 1];
+
+    return list.map((raw) => {
+      const v = Number(raw);
+      if (!Number.isFinite(v) || v <= 0) return minRatio;
       const linear = Math.min(1, Math.max(0, v / ref));
-      const eased = Math.sqrt(linear);
-      ratios[i] = minRatio + (maxRatio - minRatio) * eased;
-    }
-    return ratios;
+      const eased = Math.pow(linear, gamma);
+      return minRatio + (maxRatio - minRatio) * eased;
+    });
   }
 
   function normalizeCandleInput(item, idx, widthRatio) {
@@ -34,7 +35,9 @@
     }
     if (Array.isArray(item)) {
       const [open, close, low, high] = item.map(Number);
-      if (![open, close, low, high].every(Number.isFinite)) return null;
+      if (![open, close, low, high].every(Number.isFinite)) {
+        return { value: [idx, NaN, NaN, NaN, NaN, widthRatio] };
+      }
       return {
         value: [idx, open, close, low, high, widthRatio],
       };
@@ -43,7 +46,9 @@
     const close = Number(item.close ?? item.value?.[1]);
     const low = Number(item.low ?? item.value?.[2]);
     const high = Number(item.high ?? item.value?.[3]);
-    if (![open, close, low, high].every(Number.isFinite)) return null;
+    if (![open, close, low, high].every(Number.isFinite)) {
+      return { value: [idx, NaN, NaN, NaN, NaN, widthRatio] };
+    }
     const row = {
       value: [idx, open, close, low, high, widthRatio],
     };
@@ -67,8 +72,8 @@
     const yHigh = api.coord([xIdx, high])[1];
 
     const band = api.size([1, 0])[0];
-    const bodyW = Math.max(2, band * widthRatio * 0.88);
-    const wickW = Math.max(1, Math.min(3, bodyW * 0.16));
+    const bodyW = Math.max(1.5, band * widthRatio * 0.96);
+    const wickW = Math.max(1, Math.min(4, 1 + bodyW * 0.08));
 
     const bullish = close >= open;
     const style = params.data?.itemStyle || {};
@@ -107,18 +112,20 @@
     const {
       candles = [],
       volumes = [],
-      lookback = 34,
       z = 18,
       silent = false,
       name = "K线",
       progressive = 1000,
       progressiveThreshold = 1500,
       markPoint,
+      minRatio,
+      maxRatio,
+      gamma,
     } = options;
-    const ratios = computeVolumeWidthRatios(volumes, { lookback });
+    const ratios = computeVolumeWidthRatios(volumes, { minRatio, maxRatio, gamma });
     const data = [];
     for (let i = 0; i < candles.length; i += 1) {
-      data.push(normalizeCandleInput(candles[i], i, ratios[i] ?? 0.26));
+      data.push(normalizeCandleInput(candles[i], i, ratios[i] ?? minRatio ?? 0.08));
     }
     const series = {
       name,

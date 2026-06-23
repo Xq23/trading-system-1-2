@@ -2,9 +2,9 @@
  * K 线实体与成交量柱宽度随成交量同步变化（ECharts custom series）
  */
 (function (global) {
-  const DEFAULT_MIN_RATIO = 0.28;
-  const DEFAULT_MAX_RATIO = 0.88;
-  const DEFAULT_GAMMA = 0.38;
+  const DEFAULT_MIN_RATIO = 0.12;
+  const DEFAULT_MAX_RATIO = 0.96;
+  const DEFAULT_GAMMA = 0.3;
 
   function percentile(sortedAsc, p) {
     if (!sortedAsc.length) return 0;
@@ -67,8 +67,19 @@
     });
   }
 
-  function bodyWidth(band, widthRatio) {
-    return Math.max(0.8, band * widthRatio);
+  function ratioToUnit(widthRatio, minRatio, maxRatio) {
+    const span = maxRatio - minRatio;
+    if (!(span > 0)) return 0.5;
+    return Math.min(1, Math.max(0, (widthRatio - minRatio) / span));
+  }
+
+  /** 保证至少有 ~2px 的可视宽度差，同时不超过单槽位 */
+  function bodyWidth(band, widthRatio, minRatio, maxRatio) {
+    const t = ratioToUnit(widthRatio, minRatio, maxRatio);
+    const slot = Number.isFinite(band) && band > 0 ? band : 6;
+    const minPx = Math.max(1, slot * 0.18);
+    const maxPx = Math.max(minPx + 2, slot * 0.94);
+    return minPx + (maxPx - minPx) * t;
   }
 
   function normalizeCandleInput(item, idx, widthRatio) {
@@ -104,84 +115,94 @@
       return { value: [idx, NaN, widthRatio] };
     }
     const row = { value: [idx, vol, widthRatio] };
-    if (color) row.itemStyle = { color };
+    if (color != null && color !== "") row.itemStyle = { color };
     return row;
   }
 
-  function renderVolumeCandleItem(params, api) {
-    const open = api.value(1);
-    const close = api.value(2);
-    const low = api.value(3);
-    const high = api.value(4);
-    const widthRatio = api.value(5);
-    if (![open, close, low, high, widthRatio].every(Number.isFinite)) return;
+  function makeRenderVolumeCandleItem(widthOpts) {
+    const { minRatio, maxRatio } = widthOpts;
+    return function renderVolumeCandleItem(params, api) {
+      const open = api.value(1);
+      const close = api.value(2);
+      const low = api.value(3);
+      const high = api.value(4);
+      const widthRatio = api.value(5);
+      if (![open, close, low, high, widthRatio].every(Number.isFinite)) return;
 
-    const xIdx = api.value(0);
-    const xCenter = api.coord([xIdx, close])[0];
-    const yOpen = api.coord([xIdx, open])[1];
-    const yClose = api.coord([xIdx, close])[1];
-    const yLow = api.coord([xIdx, low])[1];
-    const yHigh = api.coord([xIdx, high])[1];
+      const xIdx = api.value(0);
+      const xCenter = api.coord([xIdx, close])[0];
+      const yOpen = api.coord([xIdx, open])[1];
+      const yClose = api.coord([xIdx, close])[1];
+      const yLow = api.coord([xIdx, low])[1];
+      const yHigh = api.coord([xIdx, high])[1];
 
-    const band = api.size([1, 0])[0];
-    const bodyW = bodyWidth(band, widthRatio);
-    const wickW = Math.max(1, Math.min(4, 0.75 + bodyW * 0.04));
+      const band = api.size([1, 0])[0];
+      const bodyW = bodyWidth(band, widthRatio, minRatio, maxRatio);
+      const wickW = Math.max(1, Math.min(4, 0.75 + bodyW * 0.04));
 
-    const bullish = close >= open;
-    const style = params.data?.itemStyle || {};
-    const upFill = style.color || "#17c964";
-    const downFill = style.color0 || style.color || "#f31260";
-    const fill = bullish ? upFill : downFill;
-    const stroke = bullish
-      ? style.borderColor || fill
-      : style.borderColor0 || style.borderColor || fill;
+      const bullish = close >= open;
+      const dataStyle = params.data?.itemStyle || {};
+      const upFill = dataStyle.color || "#17c964";
+      const downFill = dataStyle.color0 || dataStyle.color || "#f31260";
+      const fill = bullish ? upFill : downFill;
+      const stroke = bullish
+        ? dataStyle.borderColor || fill
+        : dataStyle.borderColor0 || dataStyle.borderColor || fill;
 
-    const bodyTop = Math.min(yOpen, yClose);
-    const bodyH = Math.max(1, Math.abs(yClose - yOpen));
+      const bodyTop = Math.min(yOpen, yClose);
+      const bodyH = Math.max(1, Math.abs(yClose - yOpen));
 
-    return {
-      type: "group",
-      children: [
-        {
-          type: "line",
-          shape: { x1: xCenter, y1: yHigh, x2: xCenter, y2: yLow },
-          style: { stroke, lineWidth: wickW },
-        },
-        {
-          type: "rect",
-          shape: { x: xCenter - bodyW / 2, y: bodyTop, width: bodyW, height: bodyH },
-          style: {
-            fill,
-            shadowBlur: style.shadowBlur || 0,
-            shadowColor: style.shadowColor || "transparent",
+      return {
+        type: "group",
+        children: [
+          {
+            type: "line",
+            shape: { x1: xCenter, y1: yHigh, x2: xCenter, y2: yLow },
+            style: { stroke, lineWidth: wickW },
           },
-        },
-      ],
+          {
+            type: "rect",
+            shape: { x: xCenter - bodyW / 2, y: bodyTop, width: bodyW, height: bodyH },
+            style: {
+              fill,
+              shadowBlur: dataStyle.shadowBlur || 0,
+              shadowColor: dataStyle.shadowColor || "transparent",
+            },
+          },
+        ],
+      };
     };
   }
 
-  function renderVolumeBarItem(params, api) {
-    const xIdx = api.value(0);
-    const vol = api.value(1);
-    const widthRatio = api.value(2);
-    if (!Number.isFinite(vol) || vol < 0 || !Number.isFinite(widthRatio)) return;
+  function makeRenderVolumeBarItem(colorList, widthOpts) {
+    const { minRatio, maxRatio } = widthOpts;
+    return function renderVolumeBarItem(params, api) {
+      const xIdx = api.value(0);
+      const vol = api.value(1);
+      const widthRatio = api.value(2);
+      if (!Number.isFinite(vol) || vol < 0 || !Number.isFinite(widthRatio)) return;
 
-    const xCenter = api.coord([xIdx, vol])[0];
-    const yTop = api.coord([xIdx, vol])[1];
-    const yBase = api.coord([xIdx, 0])[1];
-    const band = api.size([1, 0])[0];
-    const barW = bodyWidth(band, widthRatio);
-    const color = params.data?.itemStyle?.color || "#17c96499";
+      const xCenter = api.coord([xIdx, vol])[0];
+      const yTop = api.coord([xIdx, vol])[1];
+      const yBase = api.coord([xIdx, 0])[1];
+      const band = api.size([1, 0])[0];
+      const barW = bodyWidth(band, widthRatio, minRatio, maxRatio);
+      const color =
+        colorList[params.dataIndex] ||
+        params.data?.itemStyle?.color ||
+        api.visual("color") ||
+        "#17c96499";
 
-    return {
-      type: "rect",
-      shape: {
-        x: xCenter - barW / 2,
-        y: Math.min(yTop, yBase),
-        width: barW,
-        height: Math.max(1, Math.abs(yBase - yTop)),
-      },
-      style: { fill: color },
+      return {
+        type: "rect",
+        shape: {
+          x: xCenter - barW / 2,
+          y: Math.min(yTop, yBase),
+          width: barW,
+          height: Math.max(1, Math.abs(yBase - yTop)),
+        },
+        style: { fill: color },
+      };
     };
   }
 
@@ -201,9 +222,9 @@
       mode,
       ratios,
     } = options;
-    const widthOpts = { minRatio, maxRatio, gamma, mode };
+    const widthOpts = resolveWidthOpts({ minRatio, maxRatio, gamma, mode });
     const resolvedRatios = ratios ?? computeVolumeWidthRatios(volumes, widthOpts);
-    const fallbackRatio = minRatio ?? DEFAULT_MIN_RATIO;
+    const fallbackRatio = widthOpts.minRatio;
     const data = [];
     for (let i = 0; i < candles.length; i += 1) {
       data.push(normalizeCandleInput(candles[i], i, resolvedRatios[i] ?? fallbackRatio));
@@ -217,7 +238,7 @@
       progressiveThreshold,
       clip: true,
       data,
-      renderItem: renderVolumeCandleItem,
+      renderItem: makeRenderVolumeCandleItem(widthOpts),
     };
     if (markPoint) series.markPoint = markPoint;
     return series;
@@ -232,23 +253,22 @@
       name = "成交量",
       xAxisIndex = 1,
       yAxisIndex = 1,
-      progressive = 1000,
-      progressiveThreshold = 1500,
       minRatio,
       maxRatio,
       gamma,
       mode,
       ratios,
     } = options;
-    const widthOpts = { minRatio, maxRatio, gamma, mode };
+    const colorList = Array.isArray(colors) ? colors.slice() : [];
+    const widthOpts = resolveWidthOpts({ minRatio, maxRatio, gamma, mode });
     const resolvedRatios = ratios ?? computeVolumeWidthRatios(volumes, widthOpts);
-    const fallbackRatio = minRatio ?? DEFAULT_MIN_RATIO;
+    const fallbackRatio = widthOpts.minRatio;
     const data = volumes.map((volume, i) =>
       normalizeVolumeBarInput(
         volume,
         i,
         resolvedRatios[i] ?? fallbackRatio,
-        Array.isArray(colors) ? colors[i] : undefined
+        colorList[i]
       )
     );
     return {
@@ -258,21 +278,21 @@
       yAxisIndex,
       z,
       silent,
-      progressive,
-      progressiveThreshold,
+      progressive: 0,
       clip: true,
       data,
-      renderItem: renderVolumeBarItem,
+      renderItem: makeRenderVolumeBarItem(colorList, widthOpts),
     };
   }
 
   function createPairedSeries(options = {}) {
-    const { volumes = [], minRatio, maxRatio, gamma, mode } = options;
-    const ratios = computeVolumeWidthRatios(volumes, { minRatio, maxRatio, gamma, mode });
+    const widthOpts = resolveWidthOpts(options);
+    const { volumes = [] } = options;
+    const resolvedRatios = computeVolumeWidthRatios(volumes, widthOpts);
     return {
-      ratios,
-      candle: createSeries({ ...options, ratios }),
-      volumeBar: createVolumeBarSeries({ ...options, ratios }),
+      ratios: resolvedRatios,
+      candle: createSeries({ ...options, ratios: resolvedRatios }),
+      volumeBar: createVolumeBarSeries({ ...options, ratios: resolvedRatios }),
     };
   }
 

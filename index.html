@@ -64,6 +64,14 @@
         font-size: 12px;
         cursor: pointer;
       }
+      .header-nav-link {
+        color: #8eb4ff;
+        text-decoration: none;
+        font-size: 12px;
+      }
+      .header-nav-link:hover {
+        text-decoration: underline;
+      }
       #overview {
         margin-left: auto;
       }
@@ -238,16 +246,17 @@
         <label>
           周期：
           <select id="interval">
-            <option value="30m" selected>30min</option>
-            <option value="4h">4h</option>
-            <option value="12h">12h</option>
             <option value="1d">1d</option>
+            <option value="12h">12h</option>
+            <option value="4h">4h</option>
+            <option value="30m" selected>30min</option>
           </select>
         </label>
         <button id="overview">概览页</button>
         <button id="edit-symbols" type="button">编辑币种</button>
         <div class="user-session">
           <span id="user-display"></span>
+          <a class="header-nav-link" href="trade-records.html">交易记录</a>
           <button type="button" id="logout-btn">退出</button>
         </div>
       </div>
@@ -273,7 +282,7 @@
     <script src="scripts/ts12-auth.js?v=20260521"></script>
     <script src="scripts/ts12-symbol-prefs.js?v=20260615b"></script>
     <script src="scripts/ts12-binance-futures.js?v=20260521"></script>
-    <script src="scripts/ts12-candle-volume.js?v=20260622b"></script>
+    <script src="scripts/ts12-candle-volume.js?v=20260623a"></script>
     <script>
       const authSession = Ts12Auth.requireLogin();
       const currentUserId = authSession.userId;

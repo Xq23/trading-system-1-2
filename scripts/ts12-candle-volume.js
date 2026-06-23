@@ -9,21 +9,49 @@
   }
 
   function computeVolumeWidthRatios(volumes, opts = {}) {
-    const minRatio = Number(opts.minRatio) || 0.08;
-    const maxRatio = Number(opts.maxRatio) || 1;
-    const gamma = Number(opts.gamma) || 0.45;
+    const minRatio = Number.isFinite(Number(opts.minRatio)) ? Number(opts.minRatio) : 0.16;
+    const maxRatio = Number.isFinite(Number(opts.maxRatio)) ? Number(opts.maxRatio) : 3.4;
+    const gamma = Number.isFinite(Number(opts.gamma)) ? Number(opts.gamma) : 0.32;
+    const mode = opts.mode || "rank";
     const list = Array.isArray(volumes) ? volumes : [];
+
+    if (mode === "rank") {
+      const positive = [];
+      list.forEach((raw, i) => {
+        const v = Number(raw);
+        if (Number.isFinite(v) && v > 0) positive.push({ i, v });
+      });
+      if (!positive.length) return list.map(() => minRatio);
+
+      positive.sort((a, b) => a.v - b.v);
+      const n = positive.length;
+      const rankMap = new Map();
+      positive.forEach((entry, rank) => {
+        const pct = n <= 1 ? 1 : rank / (n - 1);
+        rankMap.set(entry.i, pct);
+      });
+
+      return list.map((raw, i) => {
+        const v = Number(raw);
+        if (!Number.isFinite(v) || v <= 0) return minRatio;
+        const pct = rankMap.get(i) ?? 0;
+        const eased = Math.pow(pct, gamma);
+        return minRatio + (maxRatio - minRatio) * eased;
+      });
+    }
+
     const positive = list.map(Number).filter((v) => Number.isFinite(v) && v > 0);
     if (!positive.length) return list.map(() => minRatio);
 
     const sorted = [...positive].sort((a, b) => a - b);
-    const refMax = percentile(sorted, 0.92) || sorted[sorted.length - 1];
-    const ref = refMax > 0 ? refMax : sorted[sorted.length - 1];
+    const refMax = percentile(sorted, 0.88) || sorted[sorted.length - 1];
+    const refMin = percentile(sorted, 0.08) || sorted[0];
+    const span = refMax - refMin;
 
     return list.map((raw) => {
       const v = Number(raw);
       if (!Number.isFinite(v) || v <= 0) return minRatio;
-      const linear = Math.min(1, Math.max(0, v / ref));
+      const linear = span > 0 ? Math.min(1, Math.max(0, (v - refMin) / span)) : 1;
       const eased = Math.pow(linear, gamma);
       return minRatio + (maxRatio - minRatio) * eased;
     });
@@ -72,8 +100,8 @@
     const yHigh = api.coord([xIdx, high])[1];
 
     const band = api.size([1, 0])[0];
-    const bodyW = Math.max(1.5, band * widthRatio * 0.96);
-    const wickW = Math.max(1, Math.min(4, 1 + bodyW * 0.08));
+    const bodyW = Math.max(0.9, band * widthRatio);
+    const wickW = Math.max(1, Math.min(5, 0.75 + bodyW * 0.05));
 
     const bullish = close >= open;
     const style = params.data?.itemStyle || {};
@@ -121,11 +149,12 @@
       minRatio,
       maxRatio,
       gamma,
+      mode,
     } = options;
-    const ratios = computeVolumeWidthRatios(volumes, { minRatio, maxRatio, gamma });
+    const ratios = computeVolumeWidthRatios(volumes, { minRatio, maxRatio, gamma, mode });
     const data = [];
     for (let i = 0; i < candles.length; i += 1) {
-      data.push(normalizeCandleInput(candles[i], i, ratios[i] ?? minRatio ?? 0.08));
+      data.push(normalizeCandleInput(candles[i], i, ratios[i] ?? minRatio ?? 0.16));
     }
     const series = {
       name,

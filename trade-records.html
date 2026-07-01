@@ -1414,7 +1414,7 @@
               const type = formatPlanStatus(item);
               if (item.kind === "plan") {
                 return `<tr>
-              <td>${formatTime(item.updatedAt || item.createdAt)}</td>
+              <td>${formatTime(item.createdAt)}</td>
               <td>${type.html}</td>
               <td>${formatPriorityBadge(item.priority)}</td>
               <td><span class="sym">${formatSymbol(item.exchangeSymbol)}</span></td>
@@ -1430,7 +1430,7 @@
               const result = formatTradeResult(item);
               const planCell = item.planText ? formatPlanCell(item.planText) : '<div class="cell-rich-text">--</div>';
               return `<tr>
-              <td>${formatTime(item.updatedAt || item.createdAt)}</td>
+              <td>${formatTime(item.createdAt)}</td>
               <td>${type.html}</td>
               <td>${formatPriorityBadge(item.priority)}</td>
               <td>${formatSymbolCell(item)}</td>

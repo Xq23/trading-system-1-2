@@ -1129,7 +1129,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 '[]' AS reviewImages,
                 p.created_at AS createdAt,
                 p.updated_at AS updatedAt,
-                p.updated_at AS sortAt
+                p.created_at AS sortAt
          FROM trade_plans p
          WHERE p.user_id = ? AND p.executed = 0
          UNION ALL
@@ -1158,7 +1158,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.review_images AS reviewImages,
                 r.created_at AS createdAt,
                 r.updated_at AS updatedAt,
-                r.updated_at AS sortAt
+                r.created_at AS sortAt
          FROM trade_records r
          LEFT JOIN trade_plans p ON p.trade_record_id = r.id AND p.user_id = r.user_id
          WHERE r.user_id = ?

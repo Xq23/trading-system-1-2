@@ -109,6 +109,7 @@ db.exec(`
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     exchange_symbol TEXT NOT NULL,
     plan_text TEXT NOT NULL DEFAULT '',
+    priority TEXT NOT NULL DEFAULT 'P2',
     executed INTEGER NOT NULL DEFAULT 0,
     plan_status TEXT NOT NULL DEFAULT 'pending',
     trade_record_id TEXT,
@@ -121,6 +122,9 @@ db.exec(`
 
 try {
   db.exec(`ALTER TABLE trade_plans ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'pending'`);
+} catch (_) {}
+try {
+  db.exec(`ALTER TABLE trade_plans ADD COLUMN priority TEXT NOT NULL DEFAULT 'P2'`);
 } catch (_) {}
 
 db.exec(`
@@ -788,14 +792,23 @@ export function deleteTradeRecord(userId, id) {
   return info.changes > 0;
 }
 
+const VALID_PLAN_PRIORITIES = new Set(["P0", "P1", "P2"]);
+
+function normalizePlanPriority(raw) {
+  const v = String(raw?.priority ?? "").trim().toUpperCase();
+  if (VALID_PLAN_PRIORITIES.has(v)) return v;
+  return "P2";
+}
+
 function normalizePlanCreateInput(raw) {
   const exchangeSymbol = String(raw?.exchangeSymbol || raw?.exchange_symbol || "")
     .trim()
     .toUpperCase();
   const planText = String(raw?.planText ?? raw?.plan_text ?? "").trim();
+  const priority = normalizePlanPriority(raw);
   if (!exchangeSymbol) return { error: "请填写目标币种" };
   if (!planText) return { error: "请填写交易计划" };
-  return { exchangeSymbol, planText };
+  return { exchangeSymbol, planText, priority };
 }
 
 function normalizeExecutionDecision(raw) {
@@ -826,6 +839,7 @@ function mapTradePlanRow(row) {
     id: row.id,
     exchangeSymbol: row.exchangeSymbol,
     planText: row.planText,
+    priority: normalizePlanPriority(row),
     executed: Boolean(row.executed),
     planStatus,
     tradeRecordId: row.tradeRecordId || null,
@@ -849,6 +863,7 @@ export function listTradePlans(userId, { limit = 50, offset = 0, executed } = {}
       `SELECT id,
               exchange_symbol AS exchangeSymbol,
               plan_text AS planText,
+              COALESCE(NULLIF(priority, ''), 'P2') AS priority,
               executed,
               COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
               trade_record_id AS tradeRecordId,
@@ -872,6 +887,7 @@ export function getTradePlan(userId, id) {
       `SELECT id,
               exchange_symbol AS exchangeSymbol,
               plan_text AS planText,
+              COALESCE(NULLIF(priority, ''), 'P2') AS priority,
               executed,
               COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
               trade_record_id AS tradeRecordId,
@@ -890,6 +906,7 @@ export function getTradePlanByRecordId(userId, recordId) {
       `SELECT id,
               exchange_symbol AS exchangeSymbol,
               plan_text AS planText,
+              COALESCE(NULLIF(priority, ''), 'P2') AS priority,
               executed,
               COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
               trade_record_id AS tradeRecordId,
@@ -909,9 +926,9 @@ export function createTradePlan(userId, raw) {
   const id = `tp_${now}_${Math.random().toString(36).slice(2, 10)}`;
   db.prepare(
     `INSERT INTO trade_plans
-      (id, user_id, exchange_symbol, plan_text, executed, plan_status, trade_record_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 0, 'pending', NULL, ?, ?)`
-  ).run(id, userId, data.exchangeSymbol, data.planText, now, now);
+      (id, user_id, exchange_symbol, plan_text, priority, executed, plan_status, trade_record_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 0, 'pending', NULL, ?, ?)`
+  ).run(id, userId, data.exchangeSymbol, data.planText, data.priority, now, now);
   return { plan: getTradePlan(userId, id) };
 }
 
@@ -958,9 +975,9 @@ export function createTradePlanWithRecord(userId, raw) {
     );
     db.prepare(
       `INSERT INTO trade_plans
-        (id, user_id, exchange_symbol, plan_text, executed, plan_status, trade_record_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, 'executed', ?, ?, ?)`
-    ).run(planId, userId, planData.exchangeSymbol, planData.planText, recordId, now, now);
+        (id, user_id, exchange_symbol, plan_text, priority, executed, plan_status, trade_record_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, 'executed', ?, ?, ?)`
+    ).run(planId, userId, planData.exchangeSymbol, planData.planText, planData.priority, recordId, now, now);
   });
   tx();
   return {
@@ -1016,6 +1033,7 @@ export function executeTradePlan(userId, planId, raw) {
       `UPDATE trade_plans SET
          exchange_symbol = ?,
          plan_text = ?,
+         priority = ?,
          executed = 1,
          plan_status = 'executed',
          trade_record_id = ?,
@@ -1024,6 +1042,7 @@ export function executeTradePlan(userId, planId, raw) {
     ).run(
       planFields.exchangeSymbol,
       planFields.planText,
+      planFields.priority,
       recordId,
       now,
       userId,
@@ -1056,10 +1075,11 @@ export function updateTradePlan(userId, id, raw) {
     `UPDATE trade_plans SET
        exchange_symbol = ?,
        plan_text = ?,
+       priority = ?,
        plan_status = ?,
        updated_at = ?
      WHERE user_id = ? AND id = ?`
-  ).run(data.exchangeSymbol, data.planText, planStatus, now, userId, id);
+  ).run(data.exchangeSymbol, data.planText, data.priority, planStatus, now, userId, id);
   return { plan: getTradePlan(userId, id) };
 }
 
@@ -1078,7 +1098,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
   const safeOffset = Math.max(Number(offset) || 0, 0);
   const rows = db
     .prepare(
-      `SELECT kind, id, exchangeSymbol, planText, executed, planStatus, planId,
+      `SELECT kind, id, exchangeSymbol, planText, priority, executed, planStatus, planId,
               positionSide, entryCondition, entryCondition30m, entryCondition4h, entryCondition12h, entryCondition1d,
               entryPrice, takeProfitPrice, stopLossPrice, riskRewardRatio, tradeResult,
               review, reviewMatchesRecord, entryConditionImages, reviewImages,
@@ -1088,6 +1108,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 p.id AS id,
                 p.exchange_symbol AS exchangeSymbol,
                 p.plan_text AS planText,
+                COALESCE(NULLIF(p.priority, ''), 'P2') AS priority,
                 p.executed AS executed,
                 COALESCE(p.plan_status, CASE WHEN p.executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
                 p.id AS planId,
@@ -1116,6 +1137,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.id AS id,
                 r.exchange_symbol AS exchangeSymbol,
                 COALESCE(p.plan_text, '') AS planText,
+                COALESCE(NULLIF(p.priority, ''), 'P2') AS priority,
                 1 AS executed,
                 'executed' AS planStatus,
                 p.id AS planId,
@@ -1158,6 +1180,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
         id: row.id,
         exchangeSymbol: row.exchangeSymbol,
         planText: row.planText,
+        priority: normalizePlanPriority(row),
         executed: false,
         planStatus: row.planStatus || "pending",
         tradeRecordId: null,
@@ -1172,6 +1195,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
       id: row.id,
       exchangeSymbol: row.exchangeSymbol,
       planText: row.planText || "",
+      priority: normalizePlanPriority(row),
       planId: row.planId || null,
       positionSide: normalizePositionSide(row.positionSide),
       ...entryFields,

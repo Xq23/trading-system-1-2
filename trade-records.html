@@ -239,6 +239,31 @@
         font-weight: 600;
         white-space: nowrap;
       }
+      .priority-badge {
+        display: inline-block;
+        min-width: 28px;
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: center;
+        white-space: nowrap;
+      }
+      .priority-p0 {
+        color: #ffb4c4;
+        background: rgba(255, 93, 152, 0.18);
+        border: 1px solid rgba(255, 93, 152, 0.35);
+      }
+      .priority-p1 {
+        color: #ffd48a;
+        background: rgba(255, 196, 83, 0.16);
+        border: 1px solid rgba(255, 196, 83, 0.32);
+      }
+      .priority-p2 {
+        color: #b8c8ea;
+        background: rgba(158, 176, 216, 0.12);
+        border: 1px solid rgba(158, 176, 216, 0.28);
+      }
       .exec-options {
         display: flex;
         flex-wrap: wrap;
@@ -581,6 +606,14 @@
               目标币种
               <input id="p-symbol" type="text" placeholder="如 BTCUSDT 或 BTC" required autocomplete="off" />
             </label>
+            <label>
+              优先级
+              <select id="p-priority" required>
+                <option value="P0">P0 · 最高</option>
+                <option value="P1">P1 · 中等</option>
+                <option value="P2" selected>P2 · 一般</option>
+              </select>
+            </label>
             <label class="span-2">
               交易计划
               <textarea id="p-plan" placeholder="写下你的交易思路、入场逻辑、风控要点等" required></textarea>
@@ -732,6 +765,7 @@
 
       const planFields = {
         symbol: document.getElementById("p-symbol"),
+        priority: document.getElementById("p-priority"),
         plan: document.getElementById("p-plan"),
       };
 
@@ -827,6 +861,17 @@
         if (target) target.checked = true;
       }
 
+      function normalizePriority(value) {
+        const v = String(value || "").trim().toUpperCase();
+        return v === "P0" || v === "P1" || v === "P2" ? v : "P2";
+      }
+
+      function formatPriorityBadge(priority) {
+        const p = normalizePriority(priority);
+        const cls = p === "P0" ? "priority-p0" : p === "P1" ? "priority-p1" : "priority-p2";
+        return `<span class="priority-badge ${cls}">${p}</span>`;
+      }
+
       function updatePlanSubmitLabel() {
         if (!editingPlanId) {
           planSubmitBtn.textContent = "保存计划";
@@ -851,7 +896,7 @@
       function renderPlanSummary() {
         const sym = planFields.symbol.value.trim();
         const plan = planFields.plan.value.trim();
-        planSummaryEl.innerHTML = `<strong>目标币种</strong> ${escapeHtml(formatSymbol(sym) || sym || "--")}<br /><strong>交易计划</strong> ${escapeHtml(plan || "--")}`;
+        planSummaryEl.innerHTML = `<strong>目标币种</strong> ${escapeHtml(formatSymbol(sym) || sym || "--")}<br /><strong>优先级</strong> ${formatPriorityBadge(planFields.priority.value)}<br /><strong>交易计划</strong> ${escapeHtml(plan || "--")}`;
       }
 
       function resetPlanForm() {
@@ -865,6 +910,7 @@
       function fillPlanForm(plan) {
         editingPlanId = plan.id;
         planFields.symbol.value = plan.exchangeSymbol || "";
+        planFields.priority.value = normalizePriority(plan.priority);
         planFields.plan.value = plan.planText || "";
         setSelectedExecutionDecision(plan.planStatus === "not_executed" ? "not_executed" : "pending");
         execOptionsWrapEl.hidden = false;
@@ -876,6 +922,7 @@
         return {
           exchangeSymbol: planFields.symbol.value.trim(),
           planText: planFields.plan.value.trim(),
+          priority: normalizePriority(planFields.priority.value),
         };
       }
 
@@ -926,7 +973,7 @@
         fillForm(record);
         formTitleEl.textContent = "编辑交易记录";
         if (record.planText) {
-          planSummaryEl.innerHTML = `<strong>交易计划</strong> ${escapeHtml(record.planText)}`;
+          planSummaryEl.innerHTML = `<strong>优先级</strong> ${formatPriorityBadge(record.priority)}<br /><strong>交易计划</strong> ${escapeHtml(record.planText)}`;
         } else {
           planSummaryEl.textContent = "无关联交易计划";
         }
@@ -1359,7 +1406,7 @@
         }
         tableWrapEl.innerHTML = `<table>
           <thead><tr>
-            <th>时间</th><th>类型</th><th>币种</th><th>入场价</th><th>止盈</th><th>止损</th><th>盈亏比</th>
+            <th>时间</th><th>类型</th><th>优先级</th><th>币种</th><th>入场价</th><th>止盈</th><th>止损</th><th>盈亏比</th>
             <th>交易计划</th><th>入场条件</th><th>结果</th><th>复盘</th><th></th>
           </tr></thead>
           <tbody>${items
@@ -1369,6 +1416,7 @@
                 return `<tr>
               <td>${formatTime(item.updatedAt || item.createdAt)}</td>
               <td>${type.html}</td>
+              <td>${formatPriorityBadge(item.priority)}</td>
               <td><span class="sym">${formatSymbol(item.exchangeSymbol)}</span></td>
               <td>--</td><td>--</td><td>--</td><td>--</td>
               <td>${formatPlanCell(item.planText)}</td>
@@ -1384,6 +1432,7 @@
               return `<tr>
               <td>${formatTime(item.updatedAt || item.createdAt)}</td>
               <td>${type.html}</td>
+              <td>${formatPriorityBadge(item.priority)}</td>
               <td>${formatSymbolCell(item)}</td>
               <td>${formatPrice(item.entryPrice)}</td>
               <td>${formatPrice(item.takeProfitPrice)}</td>

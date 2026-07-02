@@ -1177,9 +1177,8 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.review_matches_record AS reviewMatchesRecord,
                 r.entry_condition_images AS entryConditionImages,
                 r.review_images AS reviewImages,
-                r.created_at AS recordCreatedAt,
-                r.updated_at AS updatedAt,
                 COALESCE(p.created_at, r.created_at) AS createdAt,
+                r.updated_at AS updatedAt,
                 COALESCE(p.created_at, r.created_at) AS sortAt
          FROM trade_records r
          LEFT JOIN trade_plans p ON p.trade_record_id = r.id AND p.user_id = r.user_id

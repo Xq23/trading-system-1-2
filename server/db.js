@@ -127,6 +127,26 @@ try {
   db.exec(`ALTER TABLE trade_plans ADD COLUMN priority TEXT NOT NULL DEFAULT 'P2'`);
 } catch (_) {}
 
+try {
+  db.exec(`
+    UPDATE trade_records
+    SET created_at = (
+      SELECT p.created_at
+      FROM trade_plans p
+      WHERE p.trade_record_id = trade_records.id
+        AND p.user_id = trade_records.user_id
+      LIMIT 1
+    )
+    WHERE EXISTS (
+      SELECT 1
+      FROM trade_plans p
+      WHERE p.trade_record_id = trade_records.id
+        AND p.user_id = trade_records.user_id
+        AND p.created_at < trade_records.created_at
+    )
+  `);
+} catch (_) {}
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_volume_alerts_trigger ON volume_alerts(trigger_candle_open_time DESC);
 `);
@@ -998,6 +1018,7 @@ export function executeTradePlan(userId, planId, raw) {
   if (recordData.error) return recordData;
   recordData.exchangeSymbol = planFields.exchangeSymbol || existing.exchangeSymbol;
   const now = Date.now();
+  const recordCreatedAt = existing.createdAt || now;
   const recordId = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
   const tx = db.transaction(() => {
     db.prepare(
@@ -1026,7 +1047,7 @@ export function executeTradePlan(userId, planId, raw) {
       recordData.reviewMatchesRecord,
       serializeImageList(recordData.entryConditionImages),
       serializeImageList(recordData.reviewImages),
-      now,
+      recordCreatedAt,
       now
     );
     db.prepare(
@@ -1156,9 +1177,10 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.review_matches_record AS reviewMatchesRecord,
                 r.entry_condition_images AS entryConditionImages,
                 r.review_images AS reviewImages,
-                r.created_at AS createdAt,
+                r.created_at AS recordCreatedAt,
                 r.updated_at AS updatedAt,
-                r.created_at AS sortAt
+                COALESCE(p.created_at, r.created_at) AS createdAt,
+                COALESCE(p.created_at, r.created_at) AS sortAt
          FROM trade_records r
          LEFT JOIN trade_plans p ON p.trade_record_id = r.id AND p.user_id = r.user_id
          WHERE r.user_id = ?

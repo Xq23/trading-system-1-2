@@ -735,9 +735,9 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260615"></script>
-    <script src="scripts/ts12-api-client.js?v=20260615"></script>
-    <script src="scripts/ts12-auth.js?v=20260615"></script>
+    <script src="scripts/ts12-api-config.js?v=20260708"></script>
+    <script src="scripts/ts12-api-client.js?v=20260708"></script>
+    <script src="scripts/ts12-auth.js?v=20260708"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -968,8 +968,15 @@
         openModal();
       }
 
-      function openEditRecordModal(record) {
+      async function openEditRecordModal(record) {
         resetPlanForm();
+        try {
+          const res = await Ts12Api.getTradeRecord(record.id);
+          record = { ...record, ...(res?.record || {}) };
+        } catch (err) {
+          alert(String(err?.message || err));
+          return;
+        }
         fillForm(record);
         formTitleEl.textContent = "编辑交易记录";
         if (record.planText) {
@@ -1481,8 +1488,12 @@
           try {
             res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset, journal: true });
           } catch (journalErr) {
-            if (journalErr?.status !== 500 && journalErr?.status !== 404) throw journalErr;
-            res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset, journal: false });
+            if (journalErr?.status === 401) throw journalErr;
+            try {
+              res = await Ts12Api.getTradeRecords({ limit: PAGE_SIZE, offset, journal: false });
+            } catch (fallbackErr) {
+              throw journalErr?.status ? journalErr : fallbackErr;
+            }
           }
           const batch = Array.isArray(res?.items)
             ? res.items

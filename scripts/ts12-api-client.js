@@ -33,7 +33,15 @@
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(`${base}${path}`, { ...options, headers });
+    let res;
+    try {
+      res = await fetch(`${base}${path}`, { ...options, headers });
+    } catch (err) {
+      if (err instanceof TypeError) {
+        throw new Error("无法连接服务器，请检查网络后刷新；若仍失败请重新登录");
+      }
+      throw err;
+    }
     let body = null;
     const text = await res.text();
     if (text) {
@@ -137,6 +145,10 @@
     return apiFetch(`/api/trade-records?${q.toString()}`);
   }
 
+  async function getTradeRecord(id) {
+    return apiFetch(`/api/trade-records/${encodeURIComponent(id)}`);
+  }
+
   async function createTradePlan(payload) {
     return apiFetch("/api/trade-plans", {
       method: "POST",
@@ -199,6 +211,7 @@
     postVolumeAlertScanComplete,
     postVolumeAlertsBatch,
     getTradeRecords,
+    getTradeRecord,
     createTradePlan,
     updateTradePlan,
     executeTradePlan,

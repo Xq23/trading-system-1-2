@@ -351,7 +351,12 @@ app.get("/api/trade-records", authMiddleware, (req, res) => {
   const offset = req.query?.offset;
   const journal = String(req.query?.journal || "") === "1";
   if (journal) {
-    res.json(listTradeJournal(req.user.id, { limit, offset }));
+    try {
+      res.json(listTradeJournal(req.user.id, { limit, offset }));
+    } catch (err) {
+      console.error("[trade-journal]", err);
+      res.status(500).json({ error: "加载交易记录失败" });
+    }
     return;
   }
   res.json(listTradeRecords(req.user.id, { limit, offset }));

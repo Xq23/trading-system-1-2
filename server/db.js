@@ -628,7 +628,7 @@ function normalizeTradeRecordInput(raw) {
   };
 }
 
-function mapTradeRecordRow(row) {
+function mapTradeRecordRow(row, { includeImages = true } = {}) {
   if (!row) return null;
   const decoded = decodeTradeResult(row.tradeResult);
   const entryFields = mapEntryConditionFieldsFromRow(row);
@@ -637,7 +637,7 @@ function mapTradeRecordRow(row) {
     exchangeSymbol: row.exchangeSymbol,
     positionSide: normalizePositionSide(row.positionSide),
     ...entryFields,
-    entryConditionImages: parseImageListFromDb(row.entryConditionImages),
+    entryConditionImages: includeImages ? parseImageListFromDb(row.entryConditionImages) : [],
     entryPrice: row.entryPrice,
     takeProfitPrice: row.takeProfitPrice,
     stopLossPrice: row.stopLossPrice,
@@ -647,7 +647,7 @@ function mapTradeRecordRow(row) {
     tradeResultAmount: decoded.tradeResultAmount,
     review: row.review,
     reviewMatchesRecord: normalizeReviewMatchesRecord(row.reviewMatchesRecord),
-    reviewImages: parseImageListFromDb(row.reviewImages),
+    reviewImages: includeImages ? parseImageListFromDb(row.reviewImages) : [],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -683,7 +683,7 @@ export function listTradeRecords(userId, { limit = 50, offset = 0 } = {}) {
        LIMIT ? OFFSET ?`
     )
     .all(userId, safeLimit, safeOffset)
-    .map(mapTradeRecordRow);
+    .map((row) => mapTradeRecordRow(row, { includeImages: false }));
   const total =
     db.prepare(`SELECT COUNT(*) AS count FROM trade_records WHERE user_id = ?`).get(userId)
       ?.count || 0;
@@ -1122,7 +1122,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
       `SELECT kind, id, exchangeSymbol, planText, priority, executed, planStatus, planId,
               positionSide, entryCondition, entryCondition30m, entryCondition4h, entryCondition12h, entryCondition1d,
               entryPrice, takeProfitPrice, stopLossPrice, riskRewardRatio, tradeResult,
-              review, reviewMatchesRecord, entryConditionImages, reviewImages,
+              review, reviewMatchesRecord,
               createdAt, updatedAt, sortAt
        FROM (
          SELECT 'plan' AS kind,
@@ -1175,8 +1175,6 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.trade_result AS tradeResult,
                 r.review AS review,
                 r.review_matches_record AS reviewMatchesRecord,
-                r.entry_condition_images AS entryConditionImages,
-                r.review_images AS reviewImages,
                 COALESCE(p.created_at, r.created_at) AS createdAt,
                 r.updated_at AS updatedAt,
                 COALESCE(p.created_at, r.created_at) AS sortAt
@@ -1220,7 +1218,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
       planId: row.planId || null,
       positionSide: normalizePositionSide(row.positionSide),
       ...entryFields,
-      entryConditionImages: parseImageListFromDb(row.entryConditionImages),
+      entryConditionImages: [],
       entryPrice: row.entryPrice,
       takeProfitPrice: row.takeProfitPrice,
       stopLossPrice: row.stopLossPrice,
@@ -1230,7 +1228,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
       tradeResultAmount: decoded.tradeResultAmount,
       review: row.review,
       reviewMatchesRecord: normalizeReviewMatchesRecord(row.reviewMatchesRecord),
-      reviewImages: parseImageListFromDb(row.reviewImages),
+      reviewImages: [],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

@@ -1196,8 +1196,6 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 '' AS tradeResult,
                 '' AS review,
                 '' AS reviewMatchesRecord,
-                '[]' AS entryConditionImages,
-                '[]' AS reviewImages,
                 p.created_at AS createdAt,
                 p.updated_at AS updatedAt,
                 p.created_at AS sortAt

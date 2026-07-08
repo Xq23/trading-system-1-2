@@ -66,6 +66,8 @@ db.exec(`
     review_matches_record TEXT NOT NULL DEFAULT '',
     entry_condition_images TEXT NOT NULL DEFAULT '[]',
     review_images TEXT NOT NULL DEFAULT '[]',
+    plan_text TEXT NOT NULL DEFAULT '',
+    plan_priority TEXT NOT NULL DEFAULT 'P2',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -125,6 +127,40 @@ try {
 } catch (_) {}
 try {
   db.exec(`ALTER TABLE trade_plans ADD COLUMN priority TEXT NOT NULL DEFAULT 'P2'`);
+} catch (_) {}
+
+try {
+  db.exec(`ALTER TABLE trade_records ADD COLUMN plan_priority TEXT NOT NULL DEFAULT 'P2'`);
+} catch (_) {}
+try {
+  db.exec(`ALTER TABLE trade_records ADD COLUMN plan_text TEXT NOT NULL DEFAULT ''`);
+} catch (_) {}
+
+try {
+  db.exec(`
+    UPDATE trade_records
+    SET
+      plan_text = (
+        SELECT p.plan_text
+        FROM trade_plans p
+        WHERE p.trade_record_id = trade_records.id
+          AND p.user_id = trade_records.user_id
+        LIMIT 1
+      ),
+      plan_priority = COALESCE(NULLIF((
+        SELECT p.priority
+        FROM trade_plans p
+        WHERE p.trade_record_id = trade_records.id
+          AND p.user_id = trade_records.user_id
+        LIMIT 1
+      ), ''), plan_priority, 'P2')
+    WHERE EXISTS (
+      SELECT 1
+      FROM trade_plans p
+      WHERE p.trade_record_id = trade_records.id
+        AND p.user_id = trade_records.user_id
+    )
+  `);
 } catch (_) {}
 
 try {
@@ -648,6 +684,8 @@ function mapTradeRecordRow(row, { includeImages = true } = {}) {
     review: row.review,
     reviewMatchesRecord: normalizeReviewMatchesRecord(row.reviewMatchesRecord),
     reviewImages: includeImages ? parseImageListFromDb(row.reviewImages) : [],
+    planText: row.planText || "",
+    priority: normalizePlanPriority(row),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -673,6 +711,8 @@ export function listTradeRecords(userId, { limit = 50, offset = 0 } = {}) {
               trade_result AS tradeResult,
               review,
               review_matches_record AS reviewMatchesRecord,
+              plan_text AS planText,
+              plan_priority AS planPriority,
               entry_condition_images AS entryConditionImages,
               review_images AS reviewImages,
               created_at AS createdAt,
@@ -708,6 +748,8 @@ export function getTradeRecord(userId, id) {
               trade_result AS tradeResult,
               review,
               review_matches_record AS reviewMatchesRecord,
+              plan_text AS planText,
+              plan_priority AS planPriority,
               entry_condition_images AS entryConditionImages,
               review_images AS reviewImages,
               created_at AS createdAt,
@@ -729,8 +771,8 @@ export function createTradeRecord(userId, raw) {
       (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
        entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
        stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
-       entry_condition_images, review_images, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
@@ -750,6 +792,8 @@ export function createTradeRecord(userId, raw) {
     data.reviewMatchesRecord,
     serializeImageList(data.entryConditionImages),
     serializeImageList(data.reviewImages),
+    String(raw?.planText ?? raw?.plan_text ?? "").trim(),
+    normalizePlanPriority(raw),
     now,
     now
   );
@@ -815,7 +859,7 @@ export function deleteTradeRecord(userId, id) {
 const VALID_PLAN_PRIORITIES = new Set(["P0", "P1", "P2"]);
 
 function normalizePlanPriority(raw) {
-  const v = String(raw?.priority ?? "").trim().toUpperCase();
+  const v = String(raw?.priority ?? raw?.planPriority ?? "").trim().toUpperCase();
   if (VALID_PLAN_PRIORITIES.has(v)) return v;
   return "P2";
 }
@@ -969,8 +1013,8 @@ export function createTradePlanWithRecord(userId, raw) {
         (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
          entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
          stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
-         entry_condition_images, review_images, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       recordId,
       userId,
@@ -990,6 +1034,8 @@ export function createTradePlanWithRecord(userId, raw) {
       recordData.reviewMatchesRecord,
       serializeImageList(recordData.entryConditionImages),
       serializeImageList(recordData.reviewImages),
+      planData.planText,
+      planData.priority,
       now,
       now
     );
@@ -1020,14 +1066,16 @@ export function executeTradePlan(userId, planId, raw) {
   const now = Date.now();
   const recordCreatedAt = existing.createdAt || now;
   const recordId = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
+  const snapshotPlanText = planFields.planText || existing.planText || "";
+  const snapshotPriority = planFields.priority || existing.priority || "P2";
   const tx = db.transaction(() => {
     db.prepare(
       `INSERT INTO trade_records
         (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
          entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
          stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
-         entry_condition_images, review_images, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       recordId,
       userId,
@@ -1047,6 +1095,8 @@ export function executeTradePlan(userId, planId, raw) {
       recordData.reviewMatchesRecord,
       serializeImageList(recordData.entryConditionImages),
       serializeImageList(recordData.reviewImages),
+      snapshotPlanText,
+      snapshotPriority,
       recordCreatedAt,
       now
     );
@@ -1157,8 +1207,8 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
          SELECT 'record' AS kind,
                 r.id AS id,
                 r.exchange_symbol AS exchangeSymbol,
-                COALESCE(p.plan_text, '') AS planText,
-                COALESCE(NULLIF(p.priority, ''), 'P2') AS priority,
+                COALESCE(NULLIF(r.plan_text, ''), p.plan_text, '') AS planText,
+                COALESCE(NULLIF(r.plan_priority, ''), NULLIF(p.priority, ''), 'P2') AS priority,
                 1 AS executed,
                 'executed' AS planStatus,
                 p.id AS planId,

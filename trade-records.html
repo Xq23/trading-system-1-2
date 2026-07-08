@@ -1406,7 +1406,7 @@
         }
         tableWrapEl.innerHTML = `<table>
           <thead><tr>
-            <th>时间</th><th>类型</th><th>优先级</th><th>币种</th><th>入场价</th><th>止盈</th><th>止损</th><th>盈亏比</th>
+            <th>时间</th><th>类型</th><th>优先级</th><th>币种</th><th>入场价</th><th>盈亏比</th>
             <th>交易计划</th><th>入场条件</th><th>结果</th><th>复盘</th><th></th>
           </tr></thead>
           <tbody>${items
@@ -1418,7 +1418,7 @@
               <td>${type.html}</td>
               <td>${formatPriorityBadge(item.priority)}</td>
               <td><span class="sym">${formatSymbol(item.exchangeSymbol)}</span></td>
-              <td>--</td><td>--</td><td>--</td><td>--</td>
+              <td>--</td><td>--</td>
               <td>${formatPlanCell(item.planText)}</td>
               <td>--</td><td>--</td><td>--</td>
               <td><div class="row-actions">
@@ -1435,8 +1435,6 @@
               <td>${formatPriorityBadge(item.priority)}</td>
               <td>${formatSymbolCell(item)}</td>
               <td>${formatPrice(item.entryPrice)}</td>
-              <td>${formatPrice(item.takeProfitPrice)}</td>
-              <td>${formatPrice(item.stopLossPrice)}</td>
               <td class="ratio">${formatRatio(item.riskRewardRatio)}</td>
               <td>${planCell}</td>
               <td>${formatEntryConditionCell(item)}</td>

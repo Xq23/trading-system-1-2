@@ -158,14 +158,51 @@
         max-height: calc(100vh - 120px);
       }
       .status {
-        padding: 10px 12px;
+        padding: 0;
         font-size: 13px;
         color: #9eb0d8;
-        border-bottom: 1px solid #1f2f4e;
+        border-bottom: none;
         flex-shrink: 0;
       }
       .status.error {
         color: #ff9090;
+      }
+      .list-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px 14px;
+        padding: 10px 12px;
+        border-bottom: 1px solid #1f2f4e;
+        background: #111b2f;
+        flex-shrink: 0;
+      }
+      .kind-filter {
+        display: inline-flex;
+        gap: 4px;
+        padding: 3px;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        background: #0d1527;
+      }
+      .kind-filter button {
+        background: transparent;
+        color: #9eb0d8;
+        border: none;
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .kind-filter button:hover {
+        color: #dbe6ff;
+        background: #162035;
+      }
+      .kind-filter button.active {
+        color: #dbe6ff;
+        background: #2d4a8a;
+        box-shadow: inset 0 0 0 1px #4c72ff;
       }
       .table-scroll {
         flex: 1;
@@ -584,7 +621,14 @@
       </div>
 
       <div class="panel list-panel">
-        <div id="status" class="status">加载中…</div>
+        <div class="list-toolbar">
+          <div class="kind-filter" role="tablist" aria-label="列表筛选">
+            <button type="button" class="kind-filter-btn active" data-kind-filter="all" role="tab" aria-selected="true">全部</button>
+            <button type="button" class="kind-filter-btn" data-kind-filter="plan" role="tab" aria-selected="false">计划</button>
+            <button type="button" class="kind-filter-btn" data-kind-filter="record" role="tab" aria-selected="false">记录</button>
+          </div>
+          <div id="status" class="status">加载中…</div>
+        </div>
         <div id="table-wrap" class="table-scroll"></div>
         <div class="foot">
           <span id="page-info"></span>
@@ -760,6 +804,7 @@
       const pageInfoEl = document.getElementById("page-info");
       const loadMoreBtn = document.getElementById("load-more-btn");
       const reloadBtn = document.getElementById("reload-btn");
+      const kindFilterBtns = Array.from(document.querySelectorAll("[data-kind-filter]"));
 
       const execOptionsWrapEl = document.getElementById("exec-options-wrap");
 
@@ -1130,6 +1175,7 @@
       let total = 0;
       let offset = 0;
       let loading = false;
+      let kindFilter = "all";
       let editingId = null;
       let editingPlanId = null;
       let pendingPlan = null;
@@ -1405,10 +1451,46 @@
         return { html: '<span class="type-plan">计划·待观察</span>', text: "计划·待观察" };
       }
 
-      function renderTable() {
+      function getFilteredItems() {
+        if (kindFilter === "plan") return items.filter((item) => item.kind === "plan");
+        if (kindFilter === "record") return items.filter((item) => item.kind === "record");
+        return items;
+      }
+
+      function updateKindFilterUi() {
+        kindFilterBtns.forEach((btn) => {
+          const active = btn.dataset.kindFilter === kindFilter;
+          btn.classList.toggle("active", active);
+          btn.setAttribute("aria-selected", active ? "true" : "false");
+        });
+      }
+
+      function updateStatusText() {
+        const filtered = getFilteredItems();
         if (!items.length) {
-          tableWrapEl.innerHTML =
-            '<div class="empty">暂无记录，点击右上角「新增」添加第一条交易计划。</div>';
+          statusEl.textContent = "暂无记录";
+          return;
+        }
+        const planCount = items.filter((item) => item.kind === "plan").length;
+        const recordCount = items.filter((item) => item.kind === "record").length;
+        if (kindFilter === "all") {
+          statusEl.textContent = `共 ${total} 条（计划 ${planCount} · 记录 ${recordCount}）`;
+          return;
+        }
+        const label = kindFilter === "plan" ? "计划" : "记录";
+        statusEl.textContent = `显示 ${filtered.length} 条${label}（已加载 ${items.length} / ${total} 条）`;
+      }
+
+      function renderTable() {
+        const visibleItems = getFilteredItems();
+        if (!visibleItems.length) {
+          const emptyMsg =
+            kindFilter === "plan"
+              ? "暂无计划，点击右上角「新增」添加。"
+              : kindFilter === "record"
+                ? "暂无记录。"
+                : "暂无记录，点击右上角「新增」添加第一条交易计划。";
+          tableWrapEl.innerHTML = `<div class="empty">${emptyMsg}</div>`;
           return;
         }
         tableWrapEl.innerHTML = `<table>
@@ -1416,7 +1498,7 @@
             <th>时间</th><th>类型</th><th>优先级</th><th>币种</th><th>入场价</th><th>盈亏比</th>
             <th>交易计划</th><th>入场条件</th><th>结果</th><th>复盘</th><th></th>
           </tr></thead>
-          <tbody>${items
+          <tbody>${visibleItems
             .map((item) => {
               const type = formatPlanStatus(item);
               if (item.kind === "plan") {
@@ -1503,7 +1585,7 @@
           items = reset ? batch : items.concat(batch);
           total = Number(res?.total) || items.length;
           offset = items.length;
-          statusEl.textContent = items.length ? `共 ${total} 条` : "暂无记录";
+          updateStatusText();
           renderTable();
         } catch (err) {
           statusEl.textContent = String(err?.message || err);
@@ -1573,6 +1655,17 @@
       planCancelBtn.addEventListener("click", closeModal);
       reloadBtn.addEventListener("click", () => fetchPage(true));
       loadMoreBtn.addEventListener("click", () => fetchPage(false));
+
+      kindFilterBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const next = btn.dataset.kindFilter || "all";
+          if (next === kindFilter) return;
+          kindFilter = next;
+          updateKindFilterUi();
+          updateStatusText();
+          renderTable();
+        });
+      });
 
       tableWrapEl.addEventListener("click", async (e) => {
         const preview = e.target?.getAttribute?.("data-preview") || e.target?.src;

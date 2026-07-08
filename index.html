@@ -102,6 +102,9 @@
       .error {
         color: #ff9090;
       }
+      .status-warn {
+        color: #c9b458;
+      }
       .symbol-editor {
         flex-shrink: 0;
         display: grid;
@@ -474,16 +477,33 @@
 
       const zoomState = { start: 65, end: 100, userChanged: false };
       const interactionState = { mouseInChart: false };
-      const REQUEST_TIMEOUT_MS = 8000;
-      const MAX_RETRIES = 2;
-      const RETRY_BASE_MS = 350;
-      const POLL_INTERVAL_MS = 10000;
+      const REQUEST_TIMEOUT_MS = 12000;
+      const MAX_RETRIES = 3;
+      const RETRY_BASE_MS = 500;
+      const POLL_INTERVAL_MIN_MS = 15000;
+      const POLL_INTERVAL_MAX_MS = 120000;
+      const INCREMENTAL_KLINE_LIMIT = 10;
+      const FAPI_BASES = [
+        "https://fapi.binance.com",
+        "https://fapi1.binance.com",
+        "https://fapi2.binance.com",
+        "https://fapi3.binance.com",
+      ];
       /** 右侧预留空类目档（便于拖拽/缩放末尾留白） */
       const KLINE_X_GAP = 20;
       /** 主图单次加载并在图上展示的 K 线根数 */
       const KLINE_COUNT = 700;
       let isLoading = false;
       let pollTimer = null;
+      let pollIntervalMs = POLL_INTERVAL_MIN_MS;
+      const chartDataCache = {
+        key: "",
+        mergedHistory: [],
+        maxHistoryLen: 0,
+        lastStatusText: "",
+        lastSuccessAt: 0,
+        failStreak: 0,
+      };
 
       function sleep(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
@@ -498,14 +518,58 @@
             throw new Error("HTTP " + response.status);
           }
           return await response.json();
+        } catch (err) {
+          if (err?.name === "AbortError") throw new Error("请求超时");
+          throw err;
         } finally {
           clearTimeout(timer);
         }
       }
 
+      function friendlyFetchError(error) {
+        const msg = String(error?.message || error || "");
+        if (msg === "Failed to fetch") return "网络异常";
+        if (/network/i.test(msg)) return "网络异常";
+        return msg || "未知错误";
+      }
+
+      function formatCacheAge(ms) {
+        if (!ms) return "";
+        const sec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+        if (sec < 60) return `${sec} 秒前`;
+        const min = Math.floor(sec / 60);
+        if (min < 60) return `${min} 分钟前`;
+        return `${Math.floor(min / 60)} 小时前`;
+      }
+
+      function getChartCacheKey(exchangeSymbol, interval) {
+        return `${exchangeSymbol}:${interval}`;
+      }
+
+      function mergeKlinesByOpenTime(base, incoming) {
+        const byTime = new Map();
+        for (const row of base || []) byTime.set(Number(row[0]), row);
+        for (const row of incoming || []) byTime.set(Number(row[0]), row);
+        return Array.from(byTime.values()).sort((a, b) => Number(a[0]) - Number(b[0]));
+      }
+
+      function trimKlineHistory(merged, maxLen) {
+        if (!maxLen || merged.length <= maxLen) return merged;
+        return merged.slice(-maxLen);
+      }
+
       async function getFuturesSymbolMap() {
         if (futuresSymbolMap) return futuresSymbolMap;
-        const info = await Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
+        let info = null;
+        if (typeof Ts12Api?.getMarketExchangeInfo === "function" && Ts12Api.isEnabled()) {
+          try {
+            const res = await Ts12Api.getMarketExchangeInfo();
+            info = res?.exchangeInfo || null;
+          } catch (_) {}
+        }
+        if (!info) {
+          info = await Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
+        }
         futuresSymbolMap = Ts12BinanceFutures.buildMapFromExchangeInfo(info);
         return futuresSymbolMap;
       }
@@ -537,7 +601,7 @@
           renderSymbolOptions(defaultEntry?.[0] || exchangeSymbol);
           symbolInputEl.value = "";
           refreshTitle();
-          loadKlines();
+          loadKlines({ forceFull: true });
           setSymbolEditorMessage(`已增加 ${formatSymbolDisplay(exchangeSymbol)}`);
         } catch (error) {
           setSymbolEditorMessage(error.message || "增加失败", true);
@@ -563,7 +627,7 @@
         const wasActive = symbolEl.value === key;
         renderSymbolOptions(wasActive ? null : symbolEl.value);
         refreshTitle();
-        if (wasActive) loadKlines();
+        if (wasActive) loadKlines({ forceFull: true });
         setSymbolEditorMessage(`已删除 ${formatSymbolDisplay(exchangeSymbol)}`);
       }
 
@@ -603,6 +667,18 @@
       }
 
       async function requestKlines(symbol, interval, limit, endTimeMs) {
+        if (typeof Ts12Api?.getMarketKlines === "function" && Ts12Api.isEnabled()) {
+          try {
+            const res = await Ts12Api.getMarketKlines({
+              symbol,
+              interval,
+              limit,
+              endTime: endTimeMs,
+            });
+            const raw = res?.klines;
+            return { raw: normalizeKlinesResponse(raw), source: "proxy" };
+          } catch (_) {}
+        }
         const queryStr =
           "symbol=" +
           encodeURIComponent(symbol) +
@@ -611,16 +687,18 @@
           "&limit=" +
           encodeURIComponent(limit) +
           (endTimeMs != null ? "&endTime=" + encodeURIComponent(String(endTimeMs)) : "");
-        const url = "https://fapi.binance.com/fapi/v1/klines?" + queryStr;
         let lastError = null;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-          try {
-            const raw = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
-            return { raw: normalizeKlinesResponse(raw), source: "binance" };
-          } catch (error) {
-            lastError = error;
-            if (attempt < MAX_RETRIES) {
-              await sleep(RETRY_BASE_MS * 2 ** attempt);
+        for (const base of FAPI_BASES) {
+          const url = `${base}/fapi/v1/klines?${queryStr}`;
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+            try {
+              const raw = await fetchJsonWithTimeout(url, REQUEST_TIMEOUT_MS);
+              return { raw: normalizeKlinesResponse(raw), source: "binance" };
+            } catch (error) {
+              lastError = error;
+              if (attempt < MAX_RETRIES) {
+                await sleep(RETRY_BASE_MS * 2 ** attempt);
+              }
             }
           }
         }
@@ -651,11 +729,21 @@
         }
       }
 
+      function backoffPollInterval() {
+        pollIntervalMs = Math.min(POLL_INTERVAL_MAX_MS, Math.round(pollIntervalMs * 1.5));
+        startPolling();
+      }
+
+      function resetPollInterval() {
+        pollIntervalMs = POLL_INTERVAL_MIN_MS;
+        if (pollTimer) startPolling();
+      }
+
       function startPolling() {
         stopPolling();
         pollTimer = setInterval(() => {
-          if (!document.hidden) loadKlines();
-        }, POLL_INTERVAL_MS);
+          if (!document.hidden) loadKlines({ silent: true });
+        }, pollIntervalMs);
       }
 
       function computeVpStats(window) {
@@ -1264,14 +1352,25 @@
         };
       }
 
-      async function loadKlines() {
+      async function loadKlines(opts = {}) {
         if (!chart || isLoading) return;
+        const silent = Boolean(opts.silent);
+        const forceFull = Boolean(opts.forceFull);
         isLoading = true;
         const interval = normalizeIntervalToken(intervalEl.value) || "30m";
         const activeSymbol = getActiveSymbolConfig();
+        const cacheKey = getChartCacheKey(activeSymbol.exchangeSymbol, interval);
+        const canIncremental =
+          !forceFull &&
+          chartDataCache.key === cacheKey &&
+          chartDataCache.mergedHistory.length > 0;
         try {
-          statusTextEl.classList.remove("error");
-          statusTextEl.textContent = "正在加载 " + interval + " 数据...";
+          if (!silent) {
+            statusTextEl.classList.remove("error", "status-warn");
+            statusTextEl.textContent = canIncremental
+              ? "正在更新 " + interval + " 数据..."
+              : "正在加载 " + interval + " 数据...";
+          }
           const wantRolling7 = interval === "30m";
           const wantRolling30 = interval === "4h";
           const wantRolling90365 = interval === "1d";
@@ -1283,7 +1382,26 @@
             Wmax = Math.max(Wmax, barsForCalendarDays(interval, 365));
           }
           const historyNeed = Wmax > 0 ? KLINE_COUNT + Wmax - 1 : KLINE_COUNT;
-          const mergedHistory = await requestKlinesHistory(activeSymbol.exchangeSymbol, interval, historyNeed);
+          let mergedHistory;
+          if (canIncremental) {
+            const { raw: tail } = await requestKlines(
+              activeSymbol.exchangeSymbol,
+              interval,
+              INCREMENTAL_KLINE_LIMIT
+            );
+            mergedHistory = trimKlineHistory(
+              mergeKlinesByOpenTime(chartDataCache.mergedHistory, tail),
+              chartDataCache.maxHistoryLen || historyNeed
+            );
+          } else {
+            mergedHistory = await requestKlinesHistory(activeSymbol.exchangeSymbol, interval, historyNeed);
+            chartDataCache.maxHistoryLen = historyNeed;
+          }
+          chartDataCache.key = cacheKey;
+          chartDataCache.mergedHistory = mergedHistory;
+          chartDataCache.failStreak = 0;
+          chartDataCache.lastSuccessAt = Date.now();
+          resetPollInterval();
           const raw = mergedHistory.slice(-KLINE_COUNT);
           const nullBarRow = () => new Array(KLINE_COUNT).fill(null);
           let roll7 = nullBarRow();
@@ -1420,10 +1538,29 @@
             source +
             " | 更新时间: " +
             new Date().toLocaleTimeString();
+          chartDataCache.lastStatusText = statusTextEl.textContent;
+          statusTextEl.classList.remove("error", "status-warn");
           updateDocumentTitle(last);
         } catch (error) {
+          chartDataCache.failStreak += 1;
+          backoffPollInterval();
+          const hasCachedChart =
+            chartDataCache.key === cacheKey && chartDataCache.mergedHistory.length > 0 && chartDataCache.lastStatusText;
+          if (hasCachedChart) {
+            statusTextEl.classList.remove("error");
+            statusTextEl.classList.add("status-warn");
+            statusTextEl.textContent =
+              chartDataCache.lastStatusText +
+              " · 更新失败（" +
+              friendlyFetchError(error) +
+              "），保留 " +
+              formatCacheAge(chartDataCache.lastSuccessAt) +
+              " 数据";
+            return;
+          }
           statusTextEl.classList.add("error");
-          statusTextEl.textContent = "加载失败: " + error.message;
+          statusTextEl.classList.remove("status-warn");
+          statusTextEl.textContent = "加载失败: " + friendlyFetchError(error);
           updateDocumentTitle(NaN);
         } finally {
           isLoading = false;
@@ -1431,11 +1568,13 @@
       }
 
       symbolEl.addEventListener("change", () => {
+        chartDataCache.key = "";
         refreshTitle();
-        loadKlines();
+        loadKlines({ forceFull: true });
       });
       intervalEl.addEventListener("change", () => {
-        loadKlines();
+        chartDataCache.key = "";
+        loadKlines({ forceFull: true });
       });
       overviewBtn.addEventListener("click", () => {
         window.location.href = `overview.html?symbol=${encodeURIComponent(symbolEl.value)}`;
@@ -1451,7 +1590,7 @@
       symbolInputEl.addEventListener("keydown", (event) => {
         if (event.key === "Enter") addSymbolFromInput();
       });
-      refreshBtn.addEventListener("click", loadKlines);
+      refreshBtn.addEventListener("click", () => loadKlines({ forceFull: true }));
 
       chartEl.addEventListener("mouseenter", () => {
         interactionState.mouseInChart = true;
@@ -1477,7 +1616,7 @@
           stopPolling();
           return;
         }
-        loadKlines();
+        loadKlines({ forceFull: true });
         startPolling();
       });
 

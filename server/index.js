@@ -39,7 +39,6 @@ import {
   isVolumeAlertScanning,
   getVolumeAlertScanStatus,
 } from "./volume-alert-scanner.js";
-import { getMarketExchangeInfo, getMarketKlines } from "./binance-market.js";
 
 const PORT = Number(process.env.PORT) || 8787;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-me-in-production";
@@ -112,39 +111,6 @@ function authMiddleware(req, res, next) {
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
-});
-
-app.get("/api/market/klines", async (req, res) => {
-  try {
-    const result = await getMarketKlines({
-      symbol: req.query?.symbol,
-      interval: req.query?.interval,
-      limit: req.query?.limit,
-      endTime: req.query?.endTime,
-    });
-    if (result.error) {
-      res.status(400).json({ error: result.error });
-      return;
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("[market/klines]", err);
-    res.status(502).json({ error: "行情代理请求失败，请稍后重试" });
-  }
-});
-
-app.get("/api/market/exchangeInfo", async (_req, res) => {
-  try {
-    const result = await getMarketExchangeInfo();
-    if (result.error) {
-      res.status(502).json({ error: result.error });
-      return;
-    }
-    res.json(result);
-  } catch (err) {
-    console.error("[market/exchangeInfo]", err);
-    res.status(502).json({ error: "合约列表代理请求失败，请稍后重试" });
-  }
 });
 
 app.post("/api/auth/register", async (req, res) => {

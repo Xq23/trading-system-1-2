@@ -1416,16 +1416,7 @@
 
       async function getFuturesSymbolMap() {
         if (futuresSymbolMap) return futuresSymbolMap;
-        let info = null;
-        if (typeof Ts12Api?.getMarketExchangeInfo === "function" && Ts12Api.isEnabled()) {
-          try {
-            const res = await Ts12Api.getMarketExchangeInfo();
-            info = res?.exchangeInfo || null;
-          } catch (_) {}
-        }
-        if (!info) {
-          info = await Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
-        }
+        const info = await Ts12BinanceFutures.fetchExchangeInfo(fetchJsonWithTimeout, REQUEST_TIMEOUT_MS);
         futuresSymbolMap = Ts12BinanceFutures.buildMapFromExchangeInfo(info);
         return futuresSymbolMap;
       }
@@ -1495,17 +1486,6 @@
       }
 
       async function requestKlines(symbol, interval, limit, endTimeMs) {
-        if (typeof Ts12Api?.getMarketKlines === "function" && Ts12Api.isEnabled()) {
-          try {
-            const res = await Ts12Api.getMarketKlines({
-              symbol,
-              interval,
-              limit,
-              endTime: endTimeMs,
-            });
-            return normalizeKlinesResponse(res?.klines);
-          } catch (_) {}
-        }
         const queryStr =
           "symbol=" +
           encodeURIComponent(symbol) +

@@ -192,19 +192,6 @@
     return apiFetch(`/api/trade-records/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
-  async function getMarketKlines({ symbol, interval, limit, endTime } = {}) {
-    const q = new URLSearchParams();
-    if (symbol) q.set("symbol", symbol);
-    if (interval) q.set("interval", interval);
-    if (limit != null) q.set("limit", String(limit));
-    if (endTime != null) q.set("endTime", String(endTime));
-    return apiFetch(`/api/market/klines?${q.toString()}`);
-  }
-
-  async function getMarketExchangeInfo() {
-    return apiFetch("/api/market/exchangeInfo");
-  }
-
   global.Ts12Api = {
     getApiBase,
     isEnabled,
@@ -232,7 +219,5 @@
     createTradeRecord,
     updateTradeRecord,
     deleteTradeRecord,
-    getMarketKlines,
-    getMarketExchangeInfo,
   };
 })(typeof window !== "undefined" ? window : globalThis);

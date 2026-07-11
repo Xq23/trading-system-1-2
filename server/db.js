@@ -120,6 +120,14 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_trade_plans_user ON trade_plans(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_trade_plans_record ON trade_plans(trade_record_id);
+  CREATE TABLE IF NOT EXISTS trade_experiences (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_trade_experiences_user ON trade_experiences(user_id, created_at DESC);
 `);
 
 try {
@@ -1282,6 +1290,80 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
     };
   });
   return { items, total, limit: safeLimit, offset: safeOffset };
+}
+
+function mapTradeExperienceRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    content: row.content || "",
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function listTradeExperiences(userId, { limit = 100, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  const items = db
+    .prepare(
+      `SELECT id,
+              content,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM trade_experiences
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(userId, safeLimit, safeOffset)
+    .map(mapTradeExperienceRow);
+  const total =
+    db.prepare(`SELECT COUNT(*) AS count FROM trade_experiences WHERE user_id = ?`).get(userId)?.count || 0;
+  return { items, total, limit: safeLimit, offset: safeOffset };
+}
+
+export function getTradeExperience(userId, id) {
+  const row = db
+    .prepare(
+      `SELECT id,
+              content,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM trade_experiences
+       WHERE user_id = ? AND id = ?`
+    )
+    .get(userId, id);
+  return mapTradeExperienceRow(row);
+}
+
+export function createTradeExperience(userId, raw) {
+  const content = String(raw?.content ?? "").trim();
+  if (!content) return { error: "请填写经验内容" };
+  const now = Date.now();
+  const id = `te_${now}_${Math.random().toString(36).slice(2, 10)}`;
+  db.prepare(
+    `INSERT INTO trade_experiences (id, user_id, content, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(id, userId, content, now, now);
+  return { experience: getTradeExperience(userId, id) };
+}
+
+export function updateTradeExperience(userId, id, raw) {
+  const existing = getTradeExperience(userId, id);
+  if (!existing) return { error: "经验不存在" };
+  const content = String(raw?.content ?? "").trim();
+  if (!content) return { error: "请填写经验内容" };
+  const now = Date.now();
+  db.prepare(
+    `UPDATE trade_experiences SET content = ?, updated_at = ? WHERE user_id = ? AND id = ?`
+  ).run(content, now, userId, id);
+  return { experience: getTradeExperience(userId, id) };
+}
+
+export function deleteTradeExperience(userId, id) {
+  const info = db.prepare(`DELETE FROM trade_experiences WHERE user_id = ? AND id = ?`).run(userId, id);
+  return info.changes > 0;
 }
 
 export default db;

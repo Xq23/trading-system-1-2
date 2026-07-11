@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>交易经验</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b1220;
+        color: #dbe6ff;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 16px 14px 28px;
+      }
+      .head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 14px;
+        margin-bottom: 14px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .sub {
+        flex: 1 1 100%;
+        color: #7f92bd;
+        font-size: 13px;
+      }
+      .head a,
+      .head button {
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .head a:hover,
+      .head button:hover:not(:disabled) {
+        background: #1d2a45;
+      }
+      .head button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .panel {
+        border: 1px solid #2d3b59;
+        border-radius: 10px;
+        background: #0d1527;
+        overflow: hidden;
+        min-height: calc(100vh - 120px);
+        display: flex;
+        flex-direction: column;
+      }
+      .panel-title {
+        padding: 10px 12px;
+        font-size: 14px;
+        font-weight: 600;
+        border-bottom: 1px solid #1f2f4e;
+        background: #111b2f;
+      }
+      .status {
+        padding: 10px 12px;
+        font-size: 13px;
+        color: #9eb0d8;
+        border-bottom: 1px solid #1f2f4e;
+      }
+      .status.error {
+        color: #ff9090;
+      }
+      .experience-add {
+        padding: 12px 14px;
+        border-bottom: 1px solid #1f2f4e;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      .experience-add textarea {
+        width: 100%;
+        min-height: 88px;
+        resize: vertical;
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+      .experience-add button {
+        align-self: flex-end;
+        background: #2d4a8a;
+        color: #dbe6ff;
+        border: 1px solid #4c72ff;
+        border-radius: 8px;
+        padding: 6px 14px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .experience-add button:hover:not(:disabled) {
+        background: #3a5aa0;
+      }
+      .experience-add button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .experience-list {
+        flex: 1;
+        overflow: auto;
+        min-height: 0;
+        padding: 10px 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .experience-item {
+        border: 1px solid #24324f;
+        border-radius: 8px;
+        background: #111b2f;
+        padding: 10px 12px;
+      }
+      .experience-item-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .experience-time {
+        font-size: 11px;
+        color: #7f92bd;
+        white-space: nowrap;
+      }
+      .experience-actions {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .experience-actions button {
+        background: #162035;
+        color: #9eb0d8;
+        border: 1px solid #2d3b59;
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .experience-actions button:hover {
+        background: #1d2a45;
+        color: #dbe6ff;
+      }
+      .experience-actions button.danger:hover {
+        color: #ff9090;
+        border-color: #6b3040;
+      }
+      .experience-content {
+        font-size: 13px;
+        line-height: 1.55;
+        color: #dbe6ff;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .experience-content textarea {
+        width: 100%;
+        min-height: 72px;
+        background: #162035;
+        color: #dbe6ff;
+        border: 1px solid #2d3b59;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        resize: vertical;
+      }
+      .experience-empty {
+        padding: 32px 12px;
+        text-align: center;
+        color: #7f92bd;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head">
+        <h1>交易经验</h1>
+        <span class="sub">与登录账号绑定 · 逐条积累可复用的交易心得</span>
+        <a id="back-records-link" href="trade-records.html">返回交易记录</a>
+        <a id="back-overview-link" href="overview.html">返回概览</a>
+        <button type="button" id="reload-btn">刷新</button>
+      </div>
+
+      <div class="panel">
+        <div id="status" class="status">加载中…</div>
+        <div class="experience-add">
+          <textarea id="exp-input" placeholder="写下一条可复用的交易经验…"></textarea>
+          <button type="button" id="exp-add-btn">添加</button>
+        </div>
+        <div id="exp-list" class="experience-list">
+          <div class="experience-empty">加载中…</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="scripts/ts12-api-config.js?v=20260711b"></script>
+    <script src="scripts/ts12-api-client.js?v=20260711b"></script>
+    <script src="scripts/ts12-auth.js?v=20260711b"></script>
+    <script>
+      Ts12Auth.requireLogin();
+
+      const statusEl = document.getElementById("status");
+      const expInputEl = document.getElementById("exp-input");
+      const expAddBtn = document.getElementById("exp-add-btn");
+      const expListEl = document.getElementById("exp-list");
+      const reloadBtn = document.getElementById("reload-btn");
+      const backRecordsLink = document.getElementById("back-records-link");
+      const backOverviewLink = document.getElementById("back-overview-link");
+
+      let experiences = [];
+      let editingExpId = null;
+
+      function withApiQuery(href) {
+        const api = new URLSearchParams(window.location.search).get("api");
+        if (!api) return href;
+        const u = new URL(href, window.location.href);
+        u.searchParams.set("api", api);
+        return u.pathname + u.search;
+      }
+
+      backRecordsLink.href = withApiQuery("trade-records.html");
+      backOverviewLink.href = withApiQuery("overview.html");
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function formatExpTime(ms) {
+        const d = new Date(ms);
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const h = String(d.getHours()).padStart(2, "0");
+        const min = String(d.getMinutes()).padStart(2, "0");
+        return `${d.getFullYear()}-${m}-${day} ${h}:${min}`;
+      }
+
+      function renderExperienceList() {
+        if (!experiences.length) {
+          expListEl.innerHTML = '<div class="experience-empty">暂无经验，在上方输入后点击「添加」。</div>';
+          return;
+        }
+        expListEl.innerHTML = experiences
+          .map((item) => {
+            const editing = editingExpId === item.id;
+            const body = editing
+              ? `<textarea data-exp-edit="${item.id}">${escapeHtml(item.content)}</textarea>
+                 <div class="experience-actions" style="margin-top:8px;justify-content:flex-end;">
+                   <button type="button" data-exp-save="${item.id}">保存</button>
+                   <button type="button" data-exp-cancel="${item.id}">取消</button>
+                 </div>`
+              : `<div class="experience-content">${escapeHtml(item.content)}</div>`;
+            return `<div class="experience-item">
+              <div class="experience-item-head">
+                <span class="experience-time">${formatExpTime(item.createdAt)}</span>
+                ${
+                  editing
+                    ? ""
+                    : `<div class="experience-actions">
+                  <button type="button" data-exp-edit-btn="${item.id}">编辑</button>
+                  <button type="button" class="danger" data-exp-del="${item.id}">删除</button>
+                </div>`
+                }
+              </div>
+              ${body}
+            </div>`;
+          })
+          .join("");
+      }
+
+      async function loadExperiences() {
+        if (typeof Ts12Api?.getTradeExperiences !== "function") {
+          statusEl.textContent = "页面脚本版本过旧，请强制刷新（Mac: Cmd+Shift+R）";
+          statusEl.classList.add("error");
+          return;
+        }
+        reloadBtn.disabled = true;
+        statusEl.classList.remove("error");
+        statusEl.textContent = "加载中…";
+        try {
+          const res = await Ts12Api.getTradeExperiences({ limit: 200 });
+          experiences = Array.isArray(res?.items) ? res.items : [];
+          editingExpId = null;
+          statusEl.textContent = experiences.length ? `共 ${experiences.length} 条` : "暂无经验";
+          renderExperienceList();
+        } catch (err) {
+          statusEl.textContent = String(err?.message || err);
+          statusEl.classList.add("error");
+          expListEl.innerHTML = "";
+        } finally {
+          reloadBtn.disabled = false;
+        }
+      }
+
+      async function addExperience() {
+        const content = expInputEl.value.trim();
+        if (!content) {
+          expInputEl.focus();
+          return;
+        }
+        expAddBtn.disabled = true;
+        try {
+          await Ts12Api.createTradeExperience({ content });
+          expInputEl.value = "";
+          await loadExperiences();
+        } catch (err) {
+          alert(String(err?.message || err));
+        } finally {
+          expAddBtn.disabled = false;
+        }
+      }
+
+      async function saveExperience(id) {
+        const input = expListEl.querySelector(`[data-exp-edit="${id}"]`);
+        const content = String(input?.value || "").trim();
+        if (!content) {
+          alert("请填写经验内容");
+          return;
+        }
+        try {
+          await Ts12Api.updateTradeExperience(id, { content });
+          editingExpId = null;
+          await loadExperiences();
+        } catch (err) {
+          alert(String(err?.message || err));
+        }
+      }
+
+      async function deleteExperience(id) {
+        if (!window.confirm("确定删除这条经验？")) return;
+        try {
+          await Ts12Api.deleteTradeExperience(id);
+          if (editingExpId === id) editingExpId = null;
+          await loadExperiences();
+        } catch (err) {
+          alert(String(err?.message || err));
+        }
+      }
+
+      expAddBtn.addEventListener("click", addExperience);
+      reloadBtn.addEventListener("click", loadExperiences);
+      expInputEl.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault();
+          addExperience();
+        }
+      });
+      expListEl.addEventListener("click", (e) => {
+        const editBtn = e.target?.getAttribute?.("data-exp-edit-btn");
+        const delId = e.target?.getAttribute?.("data-exp-del");
+        const saveId = e.target?.getAttribute?.("data-exp-save");
+        const cancelId = e.target?.getAttribute?.("data-exp-cancel");
+        if (editBtn) {
+          editingExpId = editBtn;
+          renderExperienceList();
+          expListEl.querySelector(`[data-exp-edit="${editBtn}"]`)?.focus();
+          return;
+        }
+        if (cancelId) {
+          editingExpId = null;
+          renderExperienceList();
+          return;
+        }
+        if (saveId) {
+          saveExperience(saveId);
+          return;
+        }
+        if (delId) deleteExperience(delId);
+      });
+
+      loadExperiences();
+    </script>
+  </body>
+</html>

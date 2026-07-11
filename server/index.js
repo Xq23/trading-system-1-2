@@ -30,6 +30,11 @@ import {
   executeTradePlan,
   updateTradePlan,
   deleteTradePlan,
+  listTradeExperiences,
+  getTradeExperience,
+  createTradeExperience,
+  updateTradeExperience,
+  deleteTradeExperience,
 } from "./db.js";
 import {
   startVolumeAlertScheduler,
@@ -448,6 +453,40 @@ app.delete("/api/trade-records/:id", authMiddleware, (req, res) => {
   const ok = deleteTradeRecord(req.user.id, req.params.id);
   if (!ok) {
     res.status(404).json({ error: "记录不存在" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/trade-experiences", authMiddleware, (req, res) => {
+  const limit = req.query?.limit;
+  const offset = req.query?.offset;
+  res.json(listTradeExperiences(req.user.id, { limit, offset }));
+});
+
+app.post("/api/trade-experiences", authMiddleware, (req, res) => {
+  const result = createTradeExperience(req.user.id, req.body);
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, ...result });
+});
+
+app.put("/api/trade-experiences/:id", authMiddleware, (req, res) => {
+  const result = updateTradeExperience(req.user.id, req.params.id, req.body);
+  if (result.error) {
+    const status = result.error === "经验不存在" ? 404 : 400;
+    res.status(status).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, experience: result.experience });
+});
+
+app.delete("/api/trade-experiences/:id", authMiddleware, (req, res) => {
+  const ok = deleteTradeExperience(req.user.id, req.params.id);
+  if (!ok) {
+    res.status(404).json({ error: "经验不存在" });
     return;
   }
   res.json({ ok: true });

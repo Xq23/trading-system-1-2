@@ -616,6 +616,7 @@
         <h1>交易记录</h1>
         <span class="sub">与登录账号绑定 · 先写交易计划，观察行情后在编辑中决定是否执行</span>
         <a href="overview.html">返回概览</a>
+        <a id="experiences-link" href="trade-experiences.html">交易经验</a>
         <button type="button" id="add-btn" class="primary">新增</button>
         <button type="button" id="reload-btn">刷新</button>
       </div>
@@ -779,11 +780,19 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260708"></script>
-    <script src="scripts/ts12-api-client.js?v=20260708"></script>
-    <script src="scripts/ts12-auth.js?v=20260708"></script>
+    <script src="scripts/ts12-api-config.js?v=20260711b"></script>
+    <script src="scripts/ts12-api-client.js?v=20260711b"></script>
+    <script src="scripts/ts12-auth.js?v=20260711b"></script>
     <script>
       Ts12Auth.requireLogin();
+
+      function withApiQuery(href) {
+        const api = new URLSearchParams(window.location.search).get("api");
+        if (!api) return href;
+        const u = new URL(href, window.location.href);
+        u.searchParams.set("api", api);
+        return u.pathname + u.search;
+      }
 
       const PAGE_SIZE = 30;
       const planFormEl = document.getElementById("plan-form");
@@ -805,6 +814,8 @@
       const loadMoreBtn = document.getElementById("load-more-btn");
       const reloadBtn = document.getElementById("reload-btn");
       const kindFilterBtns = Array.from(document.querySelectorAll("[data-kind-filter]"));
+      const experiencesLink = document.getElementById("experiences-link");
+      experiencesLink.href = withApiQuery("trade-experiences.html");
 
       const execOptionsWrapEl = document.getElementById("exec-options-wrap");
 

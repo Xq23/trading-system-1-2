@@ -192,6 +192,32 @@
     return apiFetch(`/api/trade-records/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
+  async function getTradeExperiences({ limit, offset } = {}) {
+    const q = new URLSearchParams();
+    if (limit != null) q.set("limit", String(limit));
+    if (offset != null) q.set("offset", String(offset));
+    const qs = q.toString();
+    return apiFetch(`/api/trade-experiences${qs ? `?${qs}` : ""}`);
+  }
+
+  async function createTradeExperience(payload) {
+    return apiFetch("/api/trade-experiences", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function updateTradeExperience(id, payload) {
+    return apiFetch(`/api/trade-experiences/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function deleteTradeExperience(id) {
+    return apiFetch(`/api/trade-experiences/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
   global.Ts12Api = {
     getApiBase,
     isEnabled,
@@ -219,5 +245,9 @@
     createTradeRecord,
     updateTradeRecord,
     deleteTradeRecord,
+    getTradeExperiences,
+    createTradeExperience,
+    updateTradeExperience,
+    deleteTradeExperience,
   };
 })(typeof window !== "undefined" ? window : globalThis);

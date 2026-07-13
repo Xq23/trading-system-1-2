@@ -462,7 +462,8 @@ app.get("/api/trade-experiences", authMiddleware, (req, res) => {
   const limit = req.query?.limit;
   const offset = req.query?.offset;
   const sort = req.query?.sort;
-  res.json(listTradeExperiences(req.user.id, { limit, offset, sort }));
+  const tag = req.query?.tag;
+  res.json(listTradeExperiences(req.user.id, { limit, offset, sort, tag }));
 });
 
 app.post("/api/trade-experiences", authMiddleware, (req, res) => {

@@ -126,6 +126,7 @@ db.exec(`
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content TEXT NOT NULL DEFAULT '',
     priority TEXT NOT NULL DEFAULT 'P2',
+    tag TEXT NOT NULL DEFAULT '其他',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -199,6 +200,10 @@ try {
 
 try {
   db.exec(`ALTER TABLE trade_records ADD COLUMN quantity REAL`);
+} catch (_) {}
+
+try {
+  db.exec(`ALTER TABLE trade_experiences ADD COLUMN tag TEXT NOT NULL DEFAULT '其他'`);
 } catch (_) {}
 
 db.exec(`
@@ -1326,9 +1331,25 @@ function mapTradeExperienceRow(row) {
     id: row.id,
     content: row.content || "",
     priority: normalizePlanPriority(row),
+    tag: normalizeExperienceTag(row),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+const VALID_EXPERIENCE_TAGS = new Set(["交易策略", "心态", "纪律", "其他"]);
+
+function normalizeExperienceTag(raw) {
+  const v = String(raw?.tag ?? "").trim();
+  if (VALID_EXPERIENCE_TAGS.has(v)) return v;
+  return "其他";
+}
+
+function normalizeExperienceTagFilter(tag) {
+  if (tag == null || tag === "" || tag === "all" || tag === "全部") return null;
+  const v = String(tag).trim();
+  if (VALID_EXPERIENCE_TAGS.has(v)) return v;
+  return null;
 }
 
 function experienceOrderClause(sort) {
@@ -1343,28 +1364,36 @@ function experienceOrderClause(sort) {
   return "created_at DESC";
 }
 
-export function listTradeExperiences(userId, { limit = 100, offset = 0, sort } = {}) {
+export function listTradeExperiences(userId, { limit = 100, offset = 0, sort, tag } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
   const safeOffset = Math.max(Number(offset) || 0, 0);
   const safeSort = sort === "priority" ? "priority" : "time";
+  const safeTag = normalizeExperienceTagFilter(tag);
   const orderBy = experienceOrderClause(safeSort);
+  let where = "WHERE user_id = ?";
+  const params = [userId];
+  if (safeTag) {
+    where += " AND tag = ?";
+    params.push(safeTag);
+  }
   const items = db
     .prepare(
       `SELECT id,
               content,
               COALESCE(NULLIF(priority, ''), 'P2') AS priority,
+              COALESCE(NULLIF(tag, ''), '其他') AS tag,
               created_at AS createdAt,
               updated_at AS updatedAt
        FROM trade_experiences
-       WHERE user_id = ?
+       ${where}
        ORDER BY ${orderBy}
        LIMIT ? OFFSET ?`
     )
-    .all(userId, safeLimit, safeOffset)
+    .all(...params, safeLimit, safeOffset)
     .map(mapTradeExperienceRow);
   const total =
-    db.prepare(`SELECT COUNT(*) AS count FROM trade_experiences WHERE user_id = ?`).get(userId)?.count || 0;
-  return { items, total, limit: safeLimit, offset: safeOffset, sort: safeSort };
+    db.prepare(`SELECT COUNT(*) AS count FROM trade_experiences ${where}`).get(...params)?.count || 0;
+  return { items, total, limit: safeLimit, offset: safeOffset, sort: safeSort, tag: safeTag };
 }
 
 export function getTradeExperience(userId, id) {
@@ -1373,6 +1402,7 @@ export function getTradeExperience(userId, id) {
       `SELECT id,
               content,
               COALESCE(NULLIF(priority, ''), 'P2') AS priority,
+              COALESCE(NULLIF(tag, ''), '其他') AS tag,
               created_at AS createdAt,
               updated_at AS updatedAt
        FROM trade_experiences
@@ -1386,12 +1416,13 @@ export function createTradeExperience(userId, raw) {
   const content = String(raw?.content ?? "").trim();
   if (!content) return { error: "请填写经验内容" };
   const priority = normalizePlanPriority(raw);
+  const tag = normalizeExperienceTag(raw);
   const now = Date.now();
   const id = `te_${now}_${Math.random().toString(36).slice(2, 10)}`;
   db.prepare(
-    `INSERT INTO trade_experiences (id, user_id, content, priority, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(id, userId, content, priority, now, now);
+    `INSERT INTO trade_experiences (id, user_id, content, priority, tag, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, userId, content, priority, tag, now, now);
   return { experience: getTradeExperience(userId, id) };
 }
 
@@ -1404,10 +1435,11 @@ export function updateTradeExperience(userId, id, raw) {
     raw?.priority !== undefined || raw?.planPriority !== undefined
       ? normalizePlanPriority(raw)
       : existing.priority;
+  const tag = raw?.tag !== undefined ? normalizeExperienceTag(raw) : existing.tag;
   const now = Date.now();
   db.prepare(
-    `UPDATE trade_experiences SET content = ?, priority = ?, updated_at = ? WHERE user_id = ? AND id = ?`
-  ).run(content, priority, now, userId, id);
+    `UPDATE trade_experiences SET content = ?, priority = ?, tag = ?, updated_at = ? WHERE user_id = ? AND id = ?`
+  ).run(content, priority, tag, now, userId, id);
   return { experience: getTradeExperience(userId, id) };
 }
 

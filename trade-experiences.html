@@ -96,15 +96,26 @@
         background: #111b2f;
         flex-shrink: 0;
       }
-      .sort-filter {
+      .toolbar-filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .sort-filter,
+      .tag-filter {
         display: inline-flex;
+        flex-wrap: wrap;
         gap: 4px;
         padding: 3px;
         border: 1px solid #2d3b59;
         border-radius: 8px;
         background: #0d1527;
       }
-      .sort-filter button {
+      .sort-filter button,
+      .tag-filter button {
         background: transparent;
         color: #9eb0d8;
         border: none;
@@ -113,11 +124,13 @@
         font-size: 13px;
         cursor: pointer;
       }
-      .sort-filter button:hover {
+      .sort-filter button:hover,
+      .tag-filter button:hover {
         color: #dbe6ff;
         background: #162035;
       }
-      .sort-filter button.active {
+      .sort-filter button.active,
+      .tag-filter button.active {
         color: #dbe6ff;
         background: #2d4a8a;
         box-shadow: inset 0 0 0 1px #4c72ff;
@@ -144,8 +157,9 @@
       }
       .exp-priority-row {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 10px;
+        gap: 10px 16px;
         font-size: 13px;
         color: #9eb0d8;
       }
@@ -157,6 +171,32 @@
         padding: 6px 10px;
         font-size: 13px;
         font-family: inherit;
+      }
+      .tag-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+        color: #c8d8ff;
+        background: rgba(76, 114, 255, 0.14);
+        border: 1px solid rgba(76, 114, 255, 0.28);
+      }
+      .tag-badge.tag-strategy {
+        color: #9ee0ff;
+        background: rgba(62, 180, 255, 0.14);
+        border-color: rgba(62, 180, 255, 0.28);
+      }
+      .tag-badge.tag-mindset {
+        color: #ffd48a;
+        background: rgba(255, 196, 83, 0.14);
+        border-color: rgba(255, 196, 83, 0.28);
+      }
+      .tag-badge.tag-discipline {
+        color: #ffb4c4;
+        background: rgba(255, 93, 152, 0.14);
+        border-color: rgba(255, 93, 152, 0.28);
       }
       .experience-add button {
         align-self: flex-end;
@@ -277,8 +317,9 @@
       .exp-edit-priority {
         margin-top: 8px;
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 10px;
+        gap: 10px 16px;
         font-size: 13px;
         color: #9eb0d8;
       }
@@ -311,22 +352,42 @@
 
       <div class="panel">
         <div class="list-toolbar">
-          <div class="sort-filter" role="tablist" aria-label="排序方式">
-            <button type="button" class="sort-filter-btn active" data-sort="time" role="tab" aria-selected="true">按时间</button>
-            <button type="button" class="sort-filter-btn" data-sort="priority" role="tab" aria-selected="false">按等级</button>
+          <div class="toolbar-filters">
+            <div class="sort-filter" role="tablist" aria-label="排序方式">
+              <button type="button" class="sort-filter-btn active" data-sort="time" role="tab" aria-selected="true">按时间</button>
+              <button type="button" class="sort-filter-btn" data-sort="priority" role="tab" aria-selected="false">按等级</button>
+            </div>
+            <div class="tag-filter" role="tablist" aria-label="标签筛选">
+              <button type="button" class="tag-filter-btn active" data-tag="all" role="tab" aria-selected="true">全部</button>
+              <button type="button" class="tag-filter-btn" data-tag="交易策略" role="tab" aria-selected="false">交易策略</button>
+              <button type="button" class="tag-filter-btn" data-tag="心态" role="tab" aria-selected="false">心态</button>
+              <button type="button" class="tag-filter-btn" data-tag="纪律" role="tab" aria-selected="false">纪律</button>
+              <button type="button" class="tag-filter-btn" data-tag="其他" role="tab" aria-selected="false">其他</button>
+            </div>
           </div>
           <div id="status" class="status">加载中…</div>
         </div>
         <div class="experience-add">
           <textarea id="exp-input" placeholder="写下一条可复用的交易经验…"></textarea>
-          <label class="exp-priority-row">
-            等级
-            <select id="exp-priority">
-              <option value="P0">P0 · 最高</option>
-              <option value="P1">P1 · 中等</option>
-              <option value="P2" selected>P2 · 一般</option>
-            </select>
-          </label>
+          <div class="exp-priority-row">
+            <label>
+              等级
+              <select id="exp-priority">
+                <option value="P0">P0 · 最高</option>
+                <option value="P1">P1 · 中等</option>
+                <option value="P2" selected>P2 · 一般</option>
+              </select>
+            </label>
+            <label>
+              标签
+              <select id="exp-tag">
+                <option value="交易策略">交易策略</option>
+                <option value="心态">心态</option>
+                <option value="纪律">纪律</option>
+                <option value="其他" selected>其他</option>
+              </select>
+            </label>
+          </div>
           <button type="button" id="exp-add-btn">添加</button>
         </div>
         <div id="exp-list" class="experience-list">
@@ -335,25 +396,30 @@
       </div>
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260713"></script>
-    <script src="scripts/ts12-api-client.js?v=20260713"></script>
-    <script src="scripts/ts12-auth.js?v=20260713"></script>
+    <script src="scripts/ts12-api-config.js?v=20260713c"></script>
+    <script src="scripts/ts12-api-client.js?v=20260713c"></script>
+    <script src="scripts/ts12-auth.js?v=20260713c"></script>
     <script>
       Ts12Auth.requireLogin();
 
       const statusEl = document.getElementById("status");
       const expInputEl = document.getElementById("exp-input");
       const expPriorityEl = document.getElementById("exp-priority");
+      const expTagEl = document.getElementById("exp-tag");
       const expAddBtn = document.getElementById("exp-add-btn");
       const expListEl = document.getElementById("exp-list");
       const reloadBtn = document.getElementById("reload-btn");
       const backRecordsLink = document.getElementById("back-records-link");
       const backOverviewLink = document.getElementById("back-overview-link");
       const sortFilterBtns = Array.from(document.querySelectorAll("[data-sort]"));
+      const tagFilterBtns = Array.from(document.querySelectorAll("[data-tag]"));
+
+      const EXPERIENCE_TAGS = ["交易策略", "心态", "纪律", "其他"];
 
       let experiences = [];
       let editingExpId = null;
       let sortMode = "time";
+      let tagFilter = "all";
 
       function withApiQuery(href) {
         const api = new URLSearchParams(window.location.search).get("api");
@@ -404,6 +470,31 @@
           .join("");
       }
 
+      function normalizeTag(tag) {
+        const v = String(tag || "其他").trim();
+        return EXPERIENCE_TAGS.includes(v) ? v : "其他";
+      }
+
+      function tagOptions(selected) {
+        const cur = normalizeTag(selected);
+        return EXPERIENCE_TAGS.map(
+          (t) => `<option value="${t}"${t === cur ? " selected" : ""}>${t}</option>`
+        ).join("");
+      }
+
+      function formatTagBadge(tag) {
+        const t = normalizeTag(tag);
+        const cls =
+          t === "交易策略"
+            ? "tag-strategy"
+            : t === "心态"
+              ? "tag-mindset"
+              : t === "纪律"
+                ? "tag-discipline"
+                : "";
+        return `<span class="tag-badge ${cls}">${escapeHtml(t)}</span>`;
+      }
+
       function updateSortUi() {
         sortFilterBtns.forEach((btn) => {
           const active = btn.dataset.sort === sortMode;
@@ -412,9 +503,21 @@
         });
       }
 
+      function updateTagFilterUi() {
+        tagFilterBtns.forEach((btn) => {
+          const active = btn.dataset.tag === tagFilter;
+          btn.classList.toggle("active", active);
+          btn.setAttribute("aria-selected", active ? "true" : "false");
+        });
+      }
+
       function renderExperienceList() {
         if (!experiences.length) {
-          expListEl.innerHTML = '<div class="experience-empty">暂无经验，在上方输入后点击「添加」。</div>';
+          const emptyMsg =
+            tagFilter === "all"
+              ? "暂无经验，在上方输入后点击「添加」。"
+              : `暂无「${tagFilter}」标签的经验。`;
+          expListEl.innerHTML = `<div class="experience-empty">${emptyMsg}</div>`;
           return;
         }
         expListEl.innerHTML = experiences
@@ -422,10 +525,16 @@
             const editing = editingExpId === item.id;
             const body = editing
               ? `<textarea data-exp-edit="${item.id}">${escapeHtml(item.content)}</textarea>
-                 <label class="exp-edit-priority">
-                   等级
-                   <select data-exp-priority-edit="${item.id}">${priorityOptions(item.priority)}</select>
-                 </label>
+                 <div class="exp-edit-priority">
+                   <label>
+                     等级
+                     <select data-exp-priority-edit="${item.id}">${priorityOptions(item.priority)}</select>
+                   </label>
+                   <label>
+                     标签
+                     <select data-exp-tag-edit="${item.id}">${tagOptions(item.tag)}</select>
+                   </label>
+                 </div>
                  <div class="experience-actions" style="margin-top:8px;justify-content:flex-end;">
                    <button type="button" data-exp-save="${item.id}">保存</button>
                    <button type="button" data-exp-cancel="${item.id}">取消</button>
@@ -435,6 +544,7 @@
               <div class="experience-item-head">
                 <div class="experience-meta">
                   ${formatPriorityBadge(item.priority)}
+                  ${formatTagBadge(item.tag)}
                   <span class="experience-time">${formatExpTime(item.createdAt)}</span>
                 </div>
                 ${
@@ -462,13 +572,19 @@
         statusEl.classList.remove("error");
         statusEl.textContent = "加载中…";
         try {
-          const res = await Ts12Api.getTradeExperiences({ limit: 200, sort: sortMode });
+          const params = { limit: 200, sort: sortMode };
+          if (tagFilter !== "all") params.tag = tagFilter;
+          const res = await Ts12Api.getTradeExperiences(params);
           experiences = Array.isArray(res?.items) ? res.items : [];
           editingExpId = null;
           const sortLabel = sortMode === "priority" ? "按等级" : "按时间";
-          statusEl.textContent = experiences.length
-            ? `共 ${experiences.length} 条 · ${sortLabel}`
-            : "暂无经验";
+          const tagLabel = tagFilter === "all" ? "全部标签" : tagFilter;
+          const total = Number(res?.total) || experiences.length;
+          statusEl.textContent = total
+            ? `共 ${total} 条 · ${sortLabel} · ${tagLabel}`
+            : tagFilter === "all"
+              ? "暂无经验"
+              : `暂无「${tagFilter}」标签的经验`;
           renderExperienceList();
         } catch (err) {
           statusEl.textContent = String(err?.message || err);
@@ -490,9 +606,11 @@
           await Ts12Api.createTradeExperience({
             content,
             priority: expPriorityEl.value,
+            tag: expTagEl.value,
           });
           expInputEl.value = "";
           expPriorityEl.value = "P2";
+          expTagEl.value = "其他";
           await loadExperiences();
         } catch (err) {
           alert(String(err?.message || err));
@@ -504,6 +622,7 @@
       async function saveExperience(id) {
         const input = expListEl.querySelector(`[data-exp-edit="${id}"]`);
         const priorityEl = expListEl.querySelector(`[data-exp-priority-edit="${id}"]`);
+        const tagEl = expListEl.querySelector(`[data-exp-tag-edit="${id}"]`);
         const content = String(input?.value || "").trim();
         if (!content) {
           alert("请填写经验内容");
@@ -513,6 +632,7 @@
           await Ts12Api.updateTradeExperience(id, {
             content,
             priority: priorityEl?.value || "P2",
+            tag: tagEl?.value || "其他",
           });
           editingExpId = null;
           await loadExperiences();
@@ -540,6 +660,15 @@
           if (next === sortMode) return;
           sortMode = next;
           updateSortUi();
+          loadExperiences();
+        });
+      });
+      tagFilterBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const next = btn.dataset.tag || "all";
+          if (next === tagFilter) return;
+          tagFilter = next;
+          updateTagFilterUi();
           loadExperiences();
         });
       });
@@ -572,6 +701,7 @@
         if (delId) deleteExperience(delId);
       });
 
+      updateTagFilterUi();
       loadExperiences();
     </script>
   </body>

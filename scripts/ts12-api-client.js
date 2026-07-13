@@ -192,10 +192,11 @@
     return apiFetch(`/api/trade-records/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
-  async function getTradeExperiences({ limit, offset } = {}) {
+  async function getTradeExperiences({ limit, offset, sort } = {}) {
     const q = new URLSearchParams();
     if (limit != null) q.set("limit", String(limit));
     if (offset != null) q.set("offset", String(offset));
+    if (sort) q.set("sort", String(sort));
     const qs = q.toString();
     return apiFetch(`/api/trade-experiences${qs ? `?${qs}` : ""}`);
   }

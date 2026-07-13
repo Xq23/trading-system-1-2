@@ -461,7 +461,8 @@ app.delete("/api/trade-records/:id", authMiddleware, (req, res) => {
 app.get("/api/trade-experiences", authMiddleware, (req, res) => {
   const limit = req.query?.limit;
   const offset = req.query?.offset;
-  res.json(listTradeExperiences(req.user.id, { limit, offset }));
+  const sort = req.query?.sort;
+  res.json(listTradeExperiences(req.user.id, { limit, offset, sort }));
 });
 
 app.post("/api/trade-experiences", authMiddleware, (req, res) => {

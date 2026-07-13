@@ -60,6 +60,7 @@ db.exec(`
     entry_price REAL NOT NULL,
     take_profit_price REAL NOT NULL,
     stop_loss_price REAL NOT NULL,
+    quantity REAL,
     risk_reward_ratio REAL,
     trade_result TEXT NOT NULL DEFAULT '',
     review TEXT NOT NULL DEFAULT '',
@@ -194,6 +195,10 @@ try {
 
 try {
   db.exec(`ALTER TABLE trade_experiences ADD COLUMN priority TEXT NOT NULL DEFAULT 'P2'`);
+} catch (_) {}
+
+try {
+  db.exec(`ALTER TABLE trade_records ADD COLUMN quantity REAL`);
 } catch (_) {}
 
 db.exec(`
@@ -634,6 +639,12 @@ function normalizeTradeRecordInput(raw) {
   const entryPrice = Number(raw?.entryPrice ?? raw?.entry_price);
   const takeProfitPrice = Number(raw?.takeProfitPrice ?? raw?.take_profit_price);
   const stopLossPrice = Number(raw?.stopLossPrice ?? raw?.stop_loss_price);
+  const quantityRaw = raw?.quantity;
+  let quantity = null;
+  if (quantityRaw !== "" && quantityRaw != null && String(quantityRaw).trim() !== "") {
+    quantity = Number(quantityRaw);
+    if (!Number.isFinite(quantity) || quantity <= 0) return { error: "数量须为正数" };
+  }
   const review = String(raw?.review ?? "").trim();
   const reviewMatchesRecord = normalizeReviewMatchesRecord(
     raw?.reviewMatchesRecord ?? raw?.review_matches_record
@@ -668,6 +679,7 @@ function normalizeTradeRecordInput(raw) {
     entryPrice,
     takeProfitPrice,
     stopLossPrice,
+    quantity,
     riskRewardRatio,
     tradeResult,
     review,
@@ -690,6 +702,7 @@ function mapTradeRecordRow(row, { includeImages = true } = {}) {
     entryPrice: row.entryPrice,
     takeProfitPrice: row.takeProfitPrice,
     stopLossPrice: row.stopLossPrice,
+    quantity: row.quantity ?? null,
     riskRewardRatio: row.riskRewardRatio,
     tradeResult: decoded.tradeResult,
     tradeResultType: decoded.tradeResultType,
@@ -720,6 +733,7 @@ export function listTradeRecords(userId, { limit = 50, offset = 0 } = {}) {
               entry_price AS entryPrice,
               take_profit_price AS takeProfitPrice,
               stop_loss_price AS stopLossPrice,
+              quantity,
               risk_reward_ratio AS riskRewardRatio,
               trade_result AS tradeResult,
               review,
@@ -757,6 +771,7 @@ export function getTradeRecord(userId, id) {
               entry_price AS entryPrice,
               take_profit_price AS takeProfitPrice,
               stop_loss_price AS stopLossPrice,
+              quantity,
               risk_reward_ratio AS riskRewardRatio,
               trade_result AS tradeResult,
               review,
@@ -783,9 +798,9 @@ export function createTradeRecord(userId, raw) {
     `INSERT INTO trade_records
       (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
        entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
-       stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
+       stop_loss_price, quantity, risk_reward_ratio, trade_result, review, review_matches_record,
        entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
@@ -799,6 +814,7 @@ export function createTradeRecord(userId, raw) {
     data.entryPrice,
     data.takeProfitPrice,
     data.stopLossPrice,
+    data.quantity,
     data.riskRewardRatio,
     data.tradeResult,
     data.review,
@@ -831,6 +847,7 @@ export function updateTradeRecord(userId, id, raw) {
        entry_price = ?,
        take_profit_price = ?,
        stop_loss_price = ?,
+       quantity = ?,
        risk_reward_ratio = ?,
        trade_result = ?,
        review = ?,
@@ -850,6 +867,7 @@ export function updateTradeRecord(userId, id, raw) {
     data.entryPrice,
     data.takeProfitPrice,
     data.stopLossPrice,
+    data.quantity,
     data.riskRewardRatio,
     data.tradeResult,
     data.review,
@@ -1025,9 +1043,9 @@ export function createTradePlanWithRecord(userId, raw) {
       `INSERT INTO trade_records
         (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
          entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
-         stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
+         stop_loss_price, quantity, risk_reward_ratio, trade_result, review, review_matches_record,
          entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       recordId,
       userId,
@@ -1041,6 +1059,7 @@ export function createTradePlanWithRecord(userId, raw) {
       recordData.entryPrice,
       recordData.takeProfitPrice,
       recordData.stopLossPrice,
+      recordData.quantity,
       recordData.riskRewardRatio,
       recordData.tradeResult,
       recordData.review,
@@ -1086,9 +1105,9 @@ export function executeTradePlan(userId, planId, raw) {
       `INSERT INTO trade_records
         (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
          entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
-         stop_loss_price, risk_reward_ratio, trade_result, review, review_matches_record,
+         stop_loss_price, quantity, risk_reward_ratio, trade_result, review, review_matches_record,
          entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       recordId,
       userId,
@@ -1102,6 +1121,7 @@ export function executeTradePlan(userId, planId, raw) {
       recordData.entryPrice,
       recordData.takeProfitPrice,
       recordData.stopLossPrice,
+      recordData.quantity,
       recordData.riskRewardRatio,
       recordData.tradeResult,
       recordData.review,
@@ -1184,7 +1204,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
     .prepare(
       `SELECT kind, id, exchangeSymbol, planText, priority, executed, planStatus, planId,
               positionSide, entryCondition, entryCondition30m, entryCondition4h, entryCondition12h, entryCondition1d,
-              entryPrice, takeProfitPrice, stopLossPrice, riskRewardRatio, tradeResult,
+              entryPrice, takeProfitPrice, stopLossPrice, quantity, riskRewardRatio, tradeResult,
               review, reviewMatchesRecord,
               createdAt, updatedAt, sortAt
        FROM (
@@ -1205,6 +1225,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 NULL AS entryPrice,
                 NULL AS takeProfitPrice,
                 NULL AS stopLossPrice,
+                NULL AS quantity,
                 NULL AS riskRewardRatio,
                 '' AS tradeResult,
                 '' AS review,
@@ -1232,6 +1253,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.entry_price AS entryPrice,
                 r.take_profit_price AS takeProfitPrice,
                 r.stop_loss_price AS stopLossPrice,
+                r.quantity AS quantity,
                 r.risk_reward_ratio AS riskRewardRatio,
                 r.trade_result AS tradeResult,
                 r.review AS review,
@@ -1283,6 +1305,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
       entryPrice: row.entryPrice,
       takeProfitPrice: row.takeProfitPrice,
       stopLossPrice: row.stopLossPrice,
+      quantity: row.quantity ?? null,
       riskRewardRatio: row.riskRewardRatio,
       tradeResult: decoded.tradeResult,
       tradeResultType: decoded.tradeResultType,

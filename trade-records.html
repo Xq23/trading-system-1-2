@@ -692,6 +692,10 @@
                 <option value="short">做空</option>
               </select>
             </label>
+            <label>
+              数量
+              <input id="f-quantity" type="number" step="any" min="0" placeholder="如 0.01" />
+            </label>
             <label class="span-2">
               盈亏比（自动）
               <input id="f-rr" type="text" readonly placeholder="填写价格后自动计算" />
@@ -780,9 +784,9 @@
       <img id="lightbox-img" alt="预览" />
     </div>
 
-    <script src="scripts/ts12-api-config.js?v=20260711b"></script>
-    <script src="scripts/ts12-api-client.js?v=20260711b"></script>
-    <script src="scripts/ts12-auth.js?v=20260711b"></script>
+    <script src="scripts/ts12-api-config.js?v=20260713b"></script>
+    <script src="scripts/ts12-api-client.js?v=20260713b"></script>
+    <script src="scripts/ts12-auth.js?v=20260713b"></script>
     <script>
       Ts12Auth.requireLogin();
 
@@ -828,6 +832,7 @@
       const fields = {
         symbol: document.getElementById("f-symbol"),
         side: document.getElementById("f-side"),
+        quantity: document.getElementById("f-quantity"),
         entry: document.getElementById("f-entry"),
         tp: document.getElementById("f-tp"),
         sl: document.getElementById("f-sl"),
@@ -1220,6 +1225,14 @@
         return n.toFixed(6);
       }
 
+      function formatQuantity(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return "--";
+        if (n >= 1000) return n.toFixed(2);
+        if (n >= 1) return n.toFixed(4);
+        return n.toFixed(6);
+      }
+
       function formatRatio(v) {
         const n = Number(v);
         if (!Number.isFinite(n)) return "--";
@@ -1312,6 +1325,7 @@
         recordFormEl.reset();
         fields.rr.value = "";
         fields.side.value = "";
+        fields.quantity.value = "";
         fields.resultType.value = "";
         fields.resultAmount.value = "";
         fields.reviewMatches.value = "";
@@ -1331,6 +1345,8 @@
             ? record.positionSide
             : "";
         fields.entry.value = record.entryPrice ?? "";
+        fields.quantity.value =
+          record.quantity != null && Number.isFinite(Number(record.quantity)) ? record.quantity : "";
         fields.tp.value = record.takeProfitPrice ?? "";
         fields.sl.value = record.stopLossPrice ?? "";
         fillConditionFields(record);
@@ -1366,6 +1382,7 @@
           entryCondition1d: fields.condition1d.value.trim(),
           entryConditionImages: [...imageFields.condition.images],
           entryPrice: Number(fields.entry.value),
+          quantity: fields.quantity.value.trim(),
           takeProfitPrice: Number(fields.tp.value),
           stopLossPrice: Number(fields.sl.value),
           tradeResultType: fields.resultType.value,
@@ -1506,7 +1523,7 @@
         }
         tableWrapEl.innerHTML = `<table>
           <thead><tr>
-            <th>时间</th><th>类型</th><th>优先级</th><th>币种</th><th>入场价</th><th>盈亏比</th>
+            <th>时间</th><th>类型</th><th>优先级</th><th>币种</th><th>数量</th><th>入场价</th><th>盈亏比</th>
             <th>交易计划</th><th>入场条件</th><th>结果</th><th>复盘</th><th></th>
           </tr></thead>
           <tbody>${visibleItems
@@ -1518,7 +1535,7 @@
               <td>${type.html}</td>
               <td>${formatPriorityBadge(item.priority)}</td>
               <td><span class="sym">${formatSymbol(item.exchangeSymbol)}</span></td>
-              <td>--</td><td>--</td>
+              <td>--</td><td>--</td><td>--</td>
               <td>${formatPlanCell(item.planText)}</td>
               <td>--</td><td>--</td><td>--</td>
               <td><div class="row-actions">
@@ -1534,6 +1551,7 @@
               <td>${type.html}</td>
               <td>${formatPriorityBadge(item.priority)}</td>
               <td>${formatSymbolCell(item)}</td>
+              <td>${formatQuantity(item.quantity)}</td>
               <td>${formatPrice(item.entryPrice)}</td>
               <td class="ratio">${formatRatio(item.riskRewardRatio)}</td>
               <td>${planCell}</td>

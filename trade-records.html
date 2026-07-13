@@ -1228,9 +1228,7 @@
       function formatQuantity(v) {
         const n = Number(v);
         if (!Number.isFinite(n)) return "--";
-        if (n >= 1000) return n.toFixed(2);
-        if (n >= 1) return n.toFixed(4);
-        return n.toFixed(6);
+        return n.toFixed(1);
       }
 
       function formatRatio(v) {

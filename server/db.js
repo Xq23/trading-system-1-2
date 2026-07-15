@@ -113,6 +113,7 @@ db.exec(`
     exchange_symbol TEXT NOT NULL,
     plan_text TEXT NOT NULL DEFAULT '',
     priority TEXT NOT NULL DEFAULT 'P2',
+    trade_expectation TEXT NOT NULL DEFAULT '中期',
     executed INTEGER NOT NULL DEFAULT 0,
     plan_status TEXT NOT NULL DEFAULT 'pending',
     trade_record_id TEXT,
@@ -204,6 +205,31 @@ try {
 
 try {
   db.exec(`ALTER TABLE trade_experiences ADD COLUMN tag TEXT NOT NULL DEFAULT '其他'`);
+} catch (_) {}
+
+try {
+  db.exec(`ALTER TABLE trade_plans ADD COLUMN trade_expectation TEXT NOT NULL DEFAULT '中期'`);
+} catch (_) {}
+try {
+  db.exec(`ALTER TABLE trade_records ADD COLUMN trade_expectation TEXT NOT NULL DEFAULT '中期'`);
+} catch (_) {}
+try {
+  db.exec(`
+    UPDATE trade_records
+    SET trade_expectation = COALESCE(NULLIF((
+      SELECT p.trade_expectation
+      FROM trade_plans p
+      WHERE p.trade_record_id = trade_records.id
+        AND p.user_id = trade_records.user_id
+      LIMIT 1
+    ), ''), trade_expectation, '中期')
+    WHERE EXISTS (
+      SELECT 1
+      FROM trade_plans p
+      WHERE p.trade_record_id = trade_records.id
+        AND p.user_id = trade_records.user_id
+    )
+  `);
 } catch (_) {}
 
 db.exec(`
@@ -717,6 +743,7 @@ function mapTradeRecordRow(row, { includeImages = true } = {}) {
     reviewImages: includeImages ? parseImageListFromDb(row.reviewImages) : [],
     planText: row.planText || "",
     priority: normalizePlanPriority(row),
+    tradeExpectation: normalizeTradeExpectation(row),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -745,6 +772,7 @@ export function listTradeRecords(userId, { limit = 50, offset = 0 } = {}) {
               review_matches_record AS reviewMatchesRecord,
               plan_text AS planText,
               plan_priority AS planPriority,
+              trade_expectation AS tradeExpectation,
               entry_condition_images AS entryConditionImages,
               review_images AS reviewImages,
               created_at AS createdAt,
@@ -783,6 +811,7 @@ export function getTradeRecord(userId, id) {
               review_matches_record AS reviewMatchesRecord,
               plan_text AS planText,
               plan_priority AS planPriority,
+              trade_expectation AS tradeExpectation,
               entry_condition_images AS entryConditionImages,
               review_images AS reviewImages,
               created_at AS createdAt,
@@ -804,8 +833,8 @@ export function createTradeRecord(userId, raw) {
       (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
        entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
        stop_loss_price, quantity, risk_reward_ratio, trade_result, review, review_matches_record,
-       entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       entry_condition_images, review_images, plan_text, plan_priority, trade_expectation, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
@@ -828,6 +857,7 @@ export function createTradeRecord(userId, raw) {
     serializeImageList(data.reviewImages),
     String(raw?.planText ?? raw?.plan_text ?? "").trim(),
     normalizePlanPriority(raw),
+    normalizeTradeExpectation(raw),
     now,
     now
   );
@@ -893,11 +923,18 @@ export function deleteTradeRecord(userId, id) {
 }
 
 const VALID_PLAN_PRIORITIES = new Set(["P0", "P1", "P2"]);
+const VALID_TRADE_EXPECTATIONS = new Set(["短期", "中期", "长期"]);
 
 function normalizePlanPriority(raw) {
   const v = String(raw?.priority ?? raw?.planPriority ?? "").trim().toUpperCase();
   if (VALID_PLAN_PRIORITIES.has(v)) return v;
   return "P2";
+}
+
+function normalizeTradeExpectation(raw) {
+  const v = String(raw?.tradeExpectation ?? raw?.trade_expectation ?? "").trim();
+  if (VALID_TRADE_EXPECTATIONS.has(v)) return v;
+  return "中期";
 }
 
 function normalizePlanCreateInput(raw) {
@@ -906,9 +943,10 @@ function normalizePlanCreateInput(raw) {
     .toUpperCase();
   const planText = String(raw?.planText ?? raw?.plan_text ?? "").trim();
   const priority = normalizePlanPriority(raw);
+  const tradeExpectation = normalizeTradeExpectation(raw);
   if (!exchangeSymbol) return { error: "请填写目标币种" };
   if (!planText) return { error: "请填写交易计划" };
-  return { exchangeSymbol, planText, priority };
+  return { exchangeSymbol, planText, priority, tradeExpectation };
 }
 
 function normalizeExecutionDecision(raw) {
@@ -940,6 +978,7 @@ function mapTradePlanRow(row) {
     exchangeSymbol: row.exchangeSymbol,
     planText: row.planText,
     priority: normalizePlanPriority(row),
+    tradeExpectation: normalizeTradeExpectation(row),
     executed: Boolean(row.executed),
     planStatus,
     tradeRecordId: row.tradeRecordId || null,
@@ -964,6 +1003,7 @@ export function listTradePlans(userId, { limit = 50, offset = 0, executed } = {}
               exchange_symbol AS exchangeSymbol,
               plan_text AS planText,
               COALESCE(NULLIF(priority, ''), 'P2') AS priority,
+              COALESCE(NULLIF(trade_expectation, ''), '中期') AS tradeExpectation,
               executed,
               COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
               trade_record_id AS tradeRecordId,
@@ -988,6 +1028,7 @@ export function getTradePlan(userId, id) {
               exchange_symbol AS exchangeSymbol,
               plan_text AS planText,
               COALESCE(NULLIF(priority, ''), 'P2') AS priority,
+              COALESCE(NULLIF(trade_expectation, ''), '中期') AS tradeExpectation,
               executed,
               COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
               trade_record_id AS tradeRecordId,
@@ -1007,6 +1048,7 @@ export function getTradePlanByRecordId(userId, recordId) {
               exchange_symbol AS exchangeSymbol,
               plan_text AS planText,
               COALESCE(NULLIF(priority, ''), 'P2') AS priority,
+              COALESCE(NULLIF(trade_expectation, ''), '中期') AS tradeExpectation,
               executed,
               COALESCE(plan_status, CASE WHEN executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
               trade_record_id AS tradeRecordId,
@@ -1026,9 +1068,9 @@ export function createTradePlan(userId, raw) {
   const id = `tp_${now}_${Math.random().toString(36).slice(2, 10)}`;
   db.prepare(
     `INSERT INTO trade_plans
-      (id, user_id, exchange_symbol, plan_text, priority, executed, plan_status, trade_record_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, 'pending', NULL, ?, ?)`
-  ).run(id, userId, data.exchangeSymbol, data.planText, data.priority, now, now);
+      (id, user_id, exchange_symbol, plan_text, priority, trade_expectation, executed, plan_status, trade_record_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 'pending', NULL, ?, ?)`
+  ).run(id, userId, data.exchangeSymbol, data.planText, data.priority, data.tradeExpectation, now, now);
   return { plan: getTradePlan(userId, id) };
 }
 
@@ -1049,8 +1091,8 @@ export function createTradePlanWithRecord(userId, raw) {
         (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
          entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
          stop_loss_price, quantity, risk_reward_ratio, trade_result, review, review_matches_record,
-         entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         entry_condition_images, review_images, plan_text, plan_priority, trade_expectation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       recordId,
       userId,
@@ -1073,14 +1115,25 @@ export function createTradePlanWithRecord(userId, raw) {
       serializeImageList(recordData.reviewImages),
       planData.planText,
       planData.priority,
+      planData.tradeExpectation,
       now,
       now
     );
     db.prepare(
       `INSERT INTO trade_plans
-        (id, user_id, exchange_symbol, plan_text, priority, executed, plan_status, trade_record_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 1, 'executed', ?, ?, ?)`
-    ).run(planId, userId, planData.exchangeSymbol, planData.planText, planData.priority, recordId, now, now);
+        (id, user_id, exchange_symbol, plan_text, priority, trade_expectation, executed, plan_status, trade_record_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 'executed', ?, ?, ?)`
+    ).run(
+      planId,
+      userId,
+      planData.exchangeSymbol,
+      planData.planText,
+      planData.priority,
+      planData.tradeExpectation,
+      recordId,
+      now,
+      now
+    );
   });
   tx();
   return {
@@ -1105,14 +1158,16 @@ export function executeTradePlan(userId, planId, raw) {
   const recordId = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
   const snapshotPlanText = planFields.planText || existing.planText || "";
   const snapshotPriority = planFields.priority || existing.priority || "P2";
+  const snapshotExpectation =
+    planFields.tradeExpectation || existing.tradeExpectation || "中期";
   const tx = db.transaction(() => {
     db.prepare(
       `INSERT INTO trade_records
         (id, user_id, exchange_symbol, position_side, entry_condition, entry_condition_30m, entry_condition_4h,
          entry_condition_12h, entry_condition_1d, entry_price, take_profit_price,
          stop_loss_price, quantity, risk_reward_ratio, trade_result, review, review_matches_record,
-         entry_condition_images, review_images, plan_text, plan_priority, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         entry_condition_images, review_images, plan_text, plan_priority, trade_expectation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       recordId,
       userId,
@@ -1135,6 +1190,7 @@ export function executeTradePlan(userId, planId, raw) {
       serializeImageList(recordData.reviewImages),
       snapshotPlanText,
       snapshotPriority,
+      snapshotExpectation,
       recordCreatedAt,
       now
     );
@@ -1143,6 +1199,7 @@ export function executeTradePlan(userId, planId, raw) {
          exchange_symbol = ?,
          plan_text = ?,
          priority = ?,
+         trade_expectation = ?,
          executed = 1,
          plan_status = 'executed',
          trade_record_id = ?,
@@ -1152,6 +1209,7 @@ export function executeTradePlan(userId, planId, raw) {
       planFields.exchangeSymbol,
       planFields.planText,
       planFields.priority,
+      planFields.tradeExpectation,
       recordId,
       now,
       userId,
@@ -1185,10 +1243,20 @@ export function updateTradePlan(userId, id, raw) {
        exchange_symbol = ?,
        plan_text = ?,
        priority = ?,
+       trade_expectation = ?,
        plan_status = ?,
        updated_at = ?
      WHERE user_id = ? AND id = ?`
-  ).run(data.exchangeSymbol, data.planText, data.priority, planStatus, now, userId, id);
+  ).run(
+    data.exchangeSymbol,
+    data.planText,
+    data.priority,
+    data.tradeExpectation,
+    planStatus,
+    now,
+    userId,
+    id
+  );
   return { plan: getTradePlan(userId, id) };
 }
 
@@ -1207,7 +1275,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
   const safeOffset = Math.max(Number(offset) || 0, 0);
   const rows = db
     .prepare(
-      `SELECT kind, id, exchangeSymbol, planText, priority, executed, planStatus, planId,
+      `SELECT kind, id, exchangeSymbol, planText, priority, tradeExpectation, executed, planStatus, planId,
               positionSide, entryCondition, entryCondition30m, entryCondition4h, entryCondition12h, entryCondition1d,
               entryPrice, takeProfitPrice, stopLossPrice, quantity, riskRewardRatio, tradeResult,
               review, reviewMatchesRecord,
@@ -1218,6 +1286,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 p.exchange_symbol AS exchangeSymbol,
                 p.plan_text AS planText,
                 COALESCE(NULLIF(p.priority, ''), 'P2') AS priority,
+                COALESCE(NULLIF(p.trade_expectation, ''), '中期') AS tradeExpectation,
                 p.executed AS executed,
                 COALESCE(p.plan_status, CASE WHEN p.executed = 1 THEN 'executed' ELSE 'pending' END) AS planStatus,
                 p.id AS planId,
@@ -1246,6 +1315,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.exchange_symbol AS exchangeSymbol,
                 COALESCE(NULLIF(r.plan_text, ''), p.plan_text, '') AS planText,
                 COALESCE(NULLIF(r.plan_priority, ''), NULLIF(p.priority, ''), 'P2') AS priority,
+                COALESCE(NULLIF(r.trade_expectation, ''), NULLIF(p.trade_expectation, ''), '中期') AS tradeExpectation,
                 1 AS executed,
                 'executed' AS planStatus,
                 p.id AS planId,
@@ -1288,6 +1358,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
         exchangeSymbol: row.exchangeSymbol,
         planText: row.planText,
         priority: normalizePlanPriority(row),
+        tradeExpectation: normalizeTradeExpectation(row),
         executed: false,
         planStatus: row.planStatus || "pending",
         tradeRecordId: null,
@@ -1303,6 +1374,7 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
       exchangeSymbol: row.exchangeSymbol,
       planText: row.planText || "",
       priority: normalizePlanPriority(row),
+      tradeExpectation: normalizeTradeExpectation(row),
       planId: row.planId || null,
       positionSide: normalizePositionSide(row.positionSide),
       ...entryFields,

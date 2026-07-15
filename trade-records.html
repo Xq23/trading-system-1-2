@@ -659,6 +659,14 @@
                 <option value="P2" selected>P2 · 一般</option>
               </select>
             </label>
+            <label>
+              交易预期
+              <select id="p-expectation" required>
+                <option value="短期">短期</option>
+                <option value="中期" selected>中期</option>
+                <option value="长期">长期</option>
+              </select>
+            </label>
             <label class="span-2">
               交易计划
               <textarea id="p-plan" placeholder="写下你的交易思路、入场逻辑、风控要点等" required></textarea>
@@ -826,6 +834,7 @@
       const planFields = {
         symbol: document.getElementById("p-symbol"),
         priority: document.getElementById("p-priority"),
+        expectation: document.getElementById("p-expectation"),
         plan: document.getElementById("p-plan"),
       };
 
@@ -933,6 +942,11 @@
         return `<span class="priority-badge ${cls}">${p}</span>`;
       }
 
+      function normalizeTradeExpectation(value) {
+        const v = String(value || "").trim();
+        return v === "短期" || v === "中期" || v === "长期" ? v : "中期";
+      }
+
       function updatePlanSubmitLabel() {
         if (!editingPlanId) {
           planSubmitBtn.textContent = "保存计划";
@@ -957,12 +971,13 @@
       function renderPlanSummary() {
         const sym = planFields.symbol.value.trim();
         const plan = planFields.plan.value.trim();
-        planSummaryEl.innerHTML = `<strong>目标币种</strong> ${escapeHtml(formatSymbol(sym) || sym || "--")}<br /><strong>优先级</strong> ${formatPriorityBadge(planFields.priority.value)}<br /><strong>交易计划</strong> ${escapeHtml(plan || "--")}`;
+        planSummaryEl.innerHTML = `<strong>目标币种</strong> ${escapeHtml(formatSymbol(sym) || sym || "--")}<br /><strong>优先级</strong> ${formatPriorityBadge(planFields.priority.value)} · <strong>预期</strong> ${escapeHtml(normalizeTradeExpectation(planFields.expectation.value))}<br /><strong>交易计划</strong> ${escapeHtml(plan || "--")}`;
       }
 
       function resetPlanForm() {
         editingPlanId = null;
         planFormEl.reset();
+        planFields.expectation.value = "中期";
         setSelectedExecutionDecision("pending");
         planSubmitBtn.textContent = "保存计划";
         execOptionsWrapEl.hidden = true;
@@ -972,6 +987,7 @@
         editingPlanId = plan.id;
         planFields.symbol.value = plan.exchangeSymbol || "";
         planFields.priority.value = normalizePriority(plan.priority);
+        planFields.expectation.value = normalizeTradeExpectation(plan.tradeExpectation);
         planFields.plan.value = plan.planText || "";
         setSelectedExecutionDecision(plan.planStatus === "not_executed" ? "not_executed" : "pending");
         execOptionsWrapEl.hidden = false;
@@ -984,6 +1000,7 @@
           exchangeSymbol: planFields.symbol.value.trim(),
           planText: planFields.plan.value.trim(),
           priority: normalizePriority(planFields.priority.value),
+          tradeExpectation: normalizeTradeExpectation(planFields.expectation.value),
         };
       }
 
@@ -1041,7 +1058,7 @@
         fillForm(record);
         formTitleEl.textContent = "编辑交易记录";
         if (record.planText) {
-          planSummaryEl.innerHTML = `<strong>优先级</strong> ${formatPriorityBadge(record.priority)}<br /><strong>交易计划</strong> ${escapeHtml(record.planText)}`;
+          planSummaryEl.innerHTML = `<strong>优先级</strong> ${formatPriorityBadge(record.priority)} · <strong>预期</strong> ${escapeHtml(normalizeTradeExpectation(record.tradeExpectation))}<br /><strong>交易计划</strong> ${escapeHtml(record.planText)}`;
         } else {
           planSummaryEl.textContent = "无关联交易计划";
         }
@@ -1521,7 +1538,7 @@
         }
         tableWrapEl.innerHTML = `<table>
           <thead><tr>
-            <th>时间</th><th>类型</th><th>优先级</th><th>币种</th><th>数量</th><th>入场价</th><th>盈亏比</th>
+            <th>时间</th><th>类型</th><th>优先级</th><th>预期</th><th>币种</th><th>数量</th><th>入场价</th><th>盈亏比</th>
             <th>交易计划</th><th>入场条件</th><th>结果</th><th>复盘</th><th></th>
           </tr></thead>
           <tbody>${visibleItems
@@ -1532,6 +1549,7 @@
               <td>${formatTime(item.createdAt)}</td>
               <td>${type.html}</td>
               <td>${formatPriorityBadge(item.priority)}</td>
+              <td>${escapeHtml(normalizeTradeExpectation(item.tradeExpectation))}</td>
               <td><span class="sym">${formatSymbol(item.exchangeSymbol)}</span></td>
               <td>--</td><td>--</td><td>--</td>
               <td>${formatPlanCell(item.planText)}</td>
@@ -1548,6 +1566,7 @@
               <td>${formatTime(item.createdAt)}</td>
               <td>${type.html}</td>
               <td>${formatPriorityBadge(item.priority)}</td>
+              <td>${escapeHtml(normalizeTradeExpectation(item.tradeExpectation))}</td>
               <td>${formatSymbolCell(item)}</td>
               <td>${formatQuantity(item.quantity)}</td>
               <td>${formatPrice(item.entryPrice)}</td>

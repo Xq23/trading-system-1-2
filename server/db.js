@@ -175,14 +175,17 @@ try {
   `);
 } catch (_) {}
 
+// One-time repair: records created via plan execution used to inherit the plan's
+// created_at. Restore execution time from the executed plan's updated_at.
 try {
   db.exec(`
     UPDATE trade_records
     SET created_at = (
-      SELECT p.created_at
+      SELECT p.updated_at
       FROM trade_plans p
       WHERE p.trade_record_id = trade_records.id
         AND p.user_id = trade_records.user_id
+        AND p.executed = 1
       LIMIT 1
     )
     WHERE EXISTS (
@@ -190,7 +193,9 @@ try {
       FROM trade_plans p
       WHERE p.trade_record_id = trade_records.id
         AND p.user_id = trade_records.user_id
-        AND p.created_at < trade_records.created_at
+        AND p.executed = 1
+        AND trade_records.created_at = p.created_at
+        AND p.updated_at > p.created_at
     )
   `);
 } catch (_) {}
@@ -1154,7 +1159,6 @@ export function executeTradePlan(userId, planId, raw) {
   if (recordData.error) return recordData;
   recordData.exchangeSymbol = planFields.exchangeSymbol || existing.exchangeSymbol;
   const now = Date.now();
-  const recordCreatedAt = existing.createdAt || now;
   const recordId = `tr_${now}_${Math.random().toString(36).slice(2, 10)}`;
   const snapshotPlanText = planFields.planText || existing.planText || "";
   const snapshotPriority = planFields.priority || existing.priority || "P2";
@@ -1191,7 +1195,7 @@ export function executeTradePlan(userId, planId, raw) {
       snapshotPlanText,
       snapshotPriority,
       snapshotExpectation,
-      recordCreatedAt,
+      now,
       now
     );
     db.prepare(
@@ -1333,9 +1337,9 @@ export function listTradeJournal(userId, { limit = 50, offset = 0 } = {}) {
                 r.trade_result AS tradeResult,
                 r.review AS review,
                 r.review_matches_record AS reviewMatchesRecord,
-                COALESCE(p.created_at, r.created_at) AS createdAt,
+                r.created_at AS createdAt,
                 r.updated_at AS updatedAt,
-                COALESCE(p.created_at, r.created_at) AS sortAt
+                r.created_at AS sortAt
          FROM trade_records r
          LEFT JOIN trade_plans p ON p.trade_record_id = r.id AND p.user_id = r.user_id
          WHERE r.user_id = ?
